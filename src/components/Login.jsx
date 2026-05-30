@@ -79,37 +79,42 @@ export default function Login({ onLoginSuccess, lang, setLang }) {
     submitAuth(emailInput, name);
   };
 
-  const submitAuth = (email, name, customAvatar = "") => {
-    const cleanEmail = email.toLowerCase().trim();
-    const matched = storageAPI.findFamilyByMemberEmail(cleanEmail);
-    
-    let loggedUser = null;
-    
-    if (matched) {
-      loggedUser = {
-        email: cleanEmail,
-        name: matched.member.name,
-        role: matched.member.role,
-        color: matched.member.color,
-        avatar: customAvatar || matched.member.avatar,
-        familyId: matched.family.id,
-        familyName: matched.family.name
-      };
-    } else {
-      loggedUser = {
-        email: cleanEmail,
-        name: name,
-        role: "parent",
-        color: "#8b5cf6",
-        avatar: customAvatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150",
-        familyId: null,
-        familyName: ""
-      };
-    }
+  const submitAuth = async (email, name, customAvatar = "") => {
+    try {
+      const cleanEmail = email.toLowerCase().trim();
+      const matched = await storageAPI.findFamilyByMemberEmail(cleanEmail);
+      
+      let loggedUser = null;
+      
+      if (matched) {
+        loggedUser = {
+          email: cleanEmail,
+          name: matched.member.name,
+          role: matched.member.role,
+          color: matched.member.color,
+          avatar: customAvatar || matched.member.avatar,
+          familyId: matched.family.id,
+          familyName: matched.family.name
+        };
+      } else {
+        loggedUser = {
+          email: cleanEmail,
+          name: name,
+          role: "parent",
+          color: "#8b5cf6",
+          avatar: customAvatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150",
+          familyId: null,
+          familyName: ""
+        };
+      }
 
-    storageAPI.setCurrentUser(loggedUser);
-    setShowGooglePopup(false);
-    onLoginSuccess(loggedUser);
+      storageAPI.setCurrentUser(loggedUser);
+      setShowGooglePopup(false);
+      onLoginSuccess(loggedUser);
+    } catch (err) {
+      console.error("Login submission error:", err);
+      setError(t.loginError || "שגיאת התחברות. נסה שוב.");
+    }
   };
 
   return (
