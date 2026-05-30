@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Globe, UserPlus, LogOut, Check, ShieldAlert, Upload } from "lucide-react";
+import { Globe, UserPlus, LogOut, Check, ShieldAlert, Upload, Edit2, Trash2 } from "lucide-react";
 import { translations } from "../utils/translations";
 import { storageAPI, MOCK_AVATARS } from "../utils/storage";
 
@@ -15,6 +15,7 @@ export default function Settings({
   const t = translations[lang];
 
   const [showAddMember, setShowAddMember] = useState(false);
+  const [editingMember, setEditingMember] = useState(null);
   const [name, setName] = useState("");
   const [role, setRole] = useState("kid");
   const [email, setEmail] = useState("");
@@ -31,6 +32,28 @@ export default function Settings({
       setAvatar(reader.result);
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleStartEdit = (m) => {
+    setEditingMember(m);
+    setShowAddMember(false);
+    setName(m.name);
+    setRole(m.role);
+    setEmail(m.email || "");
+    setColor(m.color || PRESET_COLORS[0]);
+    setAvatar(m.avatar || MOCK_AVATARS[0]);
+    setError("");
+  };
+
+  const handleCancelForm = () => {
+    setName("");
+    setEmail("");
+    setRole("kid");
+    setColor(PRESET_COLORS[0]);
+    setAvatar(MOCK_AVATARS[0]);
+    setError("");
+    setShowAddMember(false);
+    setEditingMember(null);
   };
 
   const handleAddMemberSubmit = (e) => {
@@ -78,15 +101,84 @@ export default function Settings({
     };
 
     onSaveFamily(updatedFamily);
+    handleCancelForm();
+  };
 
-    // Reset Form
-    setName("");
-    setRole("kid");
-    setEmail("");
-    setColor(PRESET_COLORS[0]);
-    setAvatar(MOCK_AVATARS[0]);
-    setShowAddMember(false);
-    setError("");
+  const handleEditMemberSubmit = (e) => {
+    e.preventDefault();
+    if (!name.trim()) {
+      setError(t.requiredField);
+      return;
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    if (role === "parent" && !cleanEmail) {
+      setError(t.requiredField);
+      return;
+    }
+    
+    if (cleanEmail) {
+      if (!cleanEmail.includes("@")) {
+        setError(t.invalidGmail);
+        return;
+      }
+      
+      // Check for duplicate Gmail in other family members
+      const emailExists = family.members.some(
+        m => m.id !== editingMember.id && m.email && m.email.toLowerCase().trim() === cleanEmail
+      );
+      if (emailExists) {
+        setError(t.duplicateGmail);
+        return;
+      }
+    }
+
+    const updatedMembers = family.members.map(m => {
+      if (m.id === editingMember.id) {
+        return {
+          ...m,
+          name: name.trim(),
+          role,
+          email: cleanEmail,
+          color,
+          avatar
+        };
+      }
+      return m;
+    });
+
+    const updatedFamily = {
+      ...family,
+      members: updatedMembers
+    };
+
+    onSaveFamily(updatedFamily);
+    handleCancelForm();
+  };
+
+  const handleDeleteMember = (memberId) => {
+    if (family.members.length <= 1) {
+      alert(lang === "he" ? "חובה להשאיר לפחות בן משפחה אחד." : "Family must have at least one member.");
+      return;
+    }
+    
+    const confirmDelete = window.confirm(
+      lang === "he" 
+        ? "האם אתה בטוח שברצונך למחוק את חבר המשפחה הזה? פעולה זו תסיר אותו מכל הפעילויות והלוחות." 
+        : "Are you sure you want to delete this family member? This will remove them from all activities and dashboards."
+    );
+    
+    if (confirmDelete) {
+      const updatedFamily = {
+        ...family,
+        members: family.members.filter(m => m.id !== memberId)
+      };
+      onSaveFamily(updatedFamily);
+      
+      if (editingMember && editingMember.id === memberId) {
+        handleCancelForm();
+      }
+    }
   };
 
   return (
@@ -172,7 +264,7 @@ export default function Settings({
                 {t.activeFamilyMembers}
               </h3>
               
-              {!showAddMember && (
+              {!showAddMember && !editingMember && (
                 <button 
                   onClick={() => setShowAddMember(true)}
                   className="btn-secondary"
@@ -184,9 +276,13 @@ export default function Settings({
               )}
             </div>
 
-            {showAddMember ? (
-              <form onSubmit={handleAddMemberSubmit} style={{ background: "rgba(255,255,255,0.01)", border: "1px solid var(--border-glass)", borderRadius: "12px", padding: "16px" }}>
-                <h4 style={{ fontSize: "15px", marginBottom: "16px" }}>{t.addNewMemberConfig}</h4>
+            {showAddMember || editingMember ? (
+              <form onSubmit={editingMember ? handleEditMemberSubmit : handleAddMemberSubmit} style={{ background: "rgba(255,255,255,0.01)", border: "1px solid var(--border-glass)", borderRadius: "12px", padding: "16px" }}>
+                <h4 style={{ fontSize: "15px", marginBottom: "16px" }}>
+                  {editingMember 
+                    ? (lang === "he" ? `עריכת חבר משפחה: ${editingMember.name}` : `Edit Member: ${editingMember.name}`) 
+                    : t.addNewMemberConfig}
+                </h4>
 
                 {/* Name */}
                 <div className="form-group">
@@ -302,11 +398,7 @@ export default function Settings({
                 <div style={{ display: "flex", gap: "10px" }}>
                   <button 
                     type="button" 
-                    onClick={() => {
-                      setName("");
-                      setEmail("");
-                      setShowAddMember(false);
-                    }}
+                    onClick={handleCancelForm}
                     className="btn-secondary"
                     style={{ flex: 1 }}
                   >
@@ -318,7 +410,7 @@ export default function Settings({
                     style={{ flex: 1 }}
                   >
                     <Check size={16} />
-                    {t.save}
+                    {editingMember ? (lang === "he" ? "שמור" : "Save") : t.save}
                   </button>
                 </div>
 
@@ -352,8 +444,27 @@ export default function Settings({
                       </div>
                     </div>
 
-                    <div style={{ fontSize: "12px", color: "var(--text-secondary)", direction: "ltr" }}>
-                      {m.email || (lang === "he" ? "ללא אימייל" : "No Email")}
+                    <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+                      <div style={{ fontSize: "12px", color: "var(--text-secondary)", direction: "ltr" }}>
+                        {m.email || (lang === "he" ? "ללא אימייל" : "No Email")}
+                      </div>
+                      
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        <button 
+                          onClick={() => handleStartEdit(m)} 
+                          style={{ background: "rgba(139, 92, 246, 0.1)", border: "none", color: "var(--primary)", cursor: "pointer", display: "flex", padding: "6px", borderRadius: "6px" }}
+                          title={t.editBtn}
+                        >
+                          <Edit2 size={12} />
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteMember(m.id)} 
+                          style={{ background: "rgba(239, 68, 68, 0.1)", border: "none", color: "var(--danger)", cursor: "pointer", display: "flex", padding: "6px", borderRadius: "6px" }}
+                          title={t.deleteBtn}
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
