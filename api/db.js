@@ -1,4 +1,12 @@
-import { kv } from "@vercel/kv";
+import { createClient } from "@vercel/kv";
+
+const url = process.env.KV_REST_API_URL || process.env.STORAGE_REST_API_URL || process.env.STORAGE_URL || process.env.KV_URL;
+const token = process.env.KV_REST_API_TOKEN || process.env.STORAGE_REST_API_TOKEN;
+
+const kv = createClient({
+  url: url || "",
+  token: token || "",
+});
 
 export default async function handler(req, res) {
   // Enable CORS
