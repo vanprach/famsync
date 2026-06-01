@@ -65,11 +65,6 @@ export default function TravelHub({
   const [editError, setEditError] = useState("");
 
   // Document Upload States
-  const [docTitle, setDocTitle] = useState("");
-  const [docMemberId, setDocMemberId] = useState(family.members[0]?.id || "");
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [uploadedFileName, setUploadedFileName] = useState("");
-  const [uploadError, setUploadError] = useState("");
   const [isUploading, setIsUploading] = useState(false);
 
   const getActiveTrip = () => {
@@ -201,41 +196,24 @@ export default function TravelHub({
     setEditError("");
   };
 
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    setSelectedFile(file);
-    setUploadedFileName(file.name);
-    if (!docTitle) {
-      setDocTitle(file.name.split(".")[0]);
-    }
-  };
-
-  const handleSaveDocument = async (e) => {
-    e.preventDefault();
-    if (!docTitle.trim()) {
-      setUploadError(t.requiredField);
-      return;
-    }
-
+  // Upload to slot logic
+  const uploadToSlot = async (file, slotType, slotTitleHebrew) => {
     const activeTrip = getActiveTrip();
-    if (!activeTrip) return;
+    if (!activeTrip || !file) return;
 
     setIsUploading(true);
+    audioEngine.playSFX("click");
     const docId = `doc-${Date.now()}`;
-    const fileName = uploadedFileName || "boarding_pass.png";
+    const fileName = file.name;
 
-    let fileUrl = MOCK_RECEIPT_URL;
-    if (selectedFile) {
-      fileUrl = await storageAPI.uploadDocumentFile(selectedFile);
-    }
+    const fileUrl = await storageAPI.uploadDocumentFile(file);
 
     const newDoc = {
       id: docId,
-      title: docTitle.trim(),
+      title: `${slotTitleHebrew} - ${activeTrip.name}`,
       category: "travel",
-      memberId: docMemberId,
+      subType: slotType, // Store slot subType
+      memberId: family.members[0]?.id || "",
       fileName,
       fileUrl,
       uploadDate: new Date().toISOString().split("T")[0]
@@ -250,13 +228,61 @@ export default function TravelHub({
       documents: [...(activeTrip.documents || []), newDoc]
     };
     await onSaveTrip(updatedTrip);
-
-    // Reset Upload States
-    setDocTitle("");
-    setSelectedFile(null);
-    setUploadedFileName("");
-    setUploadError("");
     setIsUploading(false);
+    audioEngine.playSFX("success");
+  };
+
+  const renderUploadSlot = (slotType, slotLabel, slotTitleHebrew) => {
+    const activeTrip = getActiveTrip();
+    if (!activeTrip) return null;
+
+    const allDocs = getTripDocuments(activeTrip.documents);
+    const docs = allDocs.filter(d => d.subType === slotType);
+
+    return (
+      <div style={{ background: "rgba(255,255,255,0.01)", border: "1px solid var(--border-glass)", borderRadius: "12px", padding: "14px", marginTop: "12px" }}>
+        <h5 style={{ fontSize: "14px", fontWeight: "750", marginBottom: "8px", color: "var(--primary)" }}>
+          📂 {slotLabel}
+        </h5>
+        
+        {docs.length > 0 ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "8px" }}>
+            {docs.map(doc => (
+              <div key={doc.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "12px", padding: "6px 10px", background: "rgba(255,255,255,0.02)", borderRadius: "8px", border: "1px solid var(--border-glass)" }}>
+                <span style={{ maxWidth: "70%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.fileName}</span>
+                <button 
+                  onClick={(e) => { e.stopPropagation(); setSelectedDocPreview(doc); }} 
+                  className="inline-doc-link" 
+                  style={{ fontSize: "11px", border: "none", background: "transparent", cursor: "pointer", color: "var(--primary)", display: "flex", alignItems: "center", gap: "4px" }}
+                >
+                  <ExternalLink size={10} />
+                  {lang === "he" ? "הצג" : "View"}
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "8px", fontStyle: "italic" }}>
+            {lang === "he" ? "אין קבצים" : "No files attached"}
+          </div>
+        )}
+
+        <label className="btn-secondary" style={{ padding: "6px 12px", fontSize: "12px", cursor: "pointer", display: "inline-flex", width: "100%", justifyContent: "center", borderRadius: "8px" }}>
+          <FileUp size={12} />
+          {lang === "he" ? `העלה ${slotTitleHebrew}` : `Upload ${slotTitleHebrew}`}
+          <input 
+            type="file" 
+            accept="image/*,application/pdf" 
+            className="file-upload-input" 
+            disabled={isUploading}
+            onChange={(e) => {
+              const file = e.target.files[0];
+              if (file) uploadToSlot(file, slotType, slotTitleHebrew);
+            }} 
+          />
+        </label>
+      </div>
+    );
   };
 
   // Helper to map old document ID strings to full objects, supporting retro compatibility
@@ -663,75 +689,17 @@ export default function TravelHub({
                   </div>
                 )}
 
-                {/* Documents List & Inline Uploader */}
+                {/* Documents List & Inline Uploader slots */}
                 <div style={{ marginTop: "20px", paddingTop: "16px", borderTop: "1px solid var(--border-glass)" }}>
-                  <h4 style={{ fontSize: "14px", fontWeight: "700", color: "var(--text-secondary)", marginBottom: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
-                    <Paperclip size={14} />
-                    {t.documentsAttached} ({(activeTrip.documents && activeTrip.documents.length) || 0})
+                  <h4 style={{ fontSize: "15px", fontWeight: "700", color: "var(--text-secondary)", marginBottom: "8px" }}>
+                    📎 {lang === "he" ? "מסמכים וקבלות מצורפים" : "Attached Event Documents"}
                   </h4>
 
-                  {/* Render document list */}
-                  <div className="inline-docs-container">
-                    {getTripDocuments(activeTrip.documents).map(doc => (
-                      <div key={doc.id} className="inline-doc-item">
-                        <span style={{ fontWeight: "600" }}>{doc.title}</span>
-                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                          <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>({doc.fileName})</span>
-                          <button 
-                            onClick={() => setSelectedDocPreview(doc)} 
-                            className="inline-doc-link"
-                          >
-                            <ExternalLink size={12} />
-                            {lang === "he" ? "הצג" : "View"}
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                    {(!activeTrip.documents || activeTrip.documents.length === 0) && (
-                      <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
-                        {lang === "he" ? "אין מסמכים מצורפים לנסיעה זו" : "No documents attached to this trip"}
-                      </span>
-                    )}
+                  <div>
+                    {renderUploadSlot("passport", lang === "he" ? "צילומי דרכון" : "Passport Copies", lang === "he" ? "צילום דרכון" : "Passport Copy")}
+                    {renderUploadSlot("ticket", lang === "he" ? "כרטיסי טיסה ו-Boarding" : "Flight Tickets & Boarding Passes", lang === "he" ? "כרטיס טיסה / Boarding" : "Flight Ticket / Boarding")}
+                    {renderUploadSlot("hotel", lang === "he" ? "שוברי מלון" : "Hotel Vouchers", lang === "he" ? "שובר מלון" : "Hotel Voucher")}
                   </div>
-
-                  {/* Uploader Form */}
-                  <form onSubmit={handleSaveDocument} style={{ marginTop: "16px", padding: "12px", background: "rgba(255,255,255,0.01)", border: "1px dashed var(--border-glass)", borderRadius: "8px" }}>
-                    <h5 style={{ fontSize: "13px", fontWeight: "700", marginBottom: "8px" }}>
-                      {lang === "he" ? "העלאת כרטיסי טיסה או שוברים לנסיעה" : "Upload boarding passes/tickets to this trip"}
-                    </h5>
-                    
-                    <div className="grid-cols-2" style={{ gap: "8px", marginBottom: "10px" }}>
-                      <input 
-                        type="text" 
-                        placeholder={lang === "he" ? "כותרת (למשל: כרטיס טיסה הלוך)" : "Title (e.g. Flight ticket)"}
-                        className="form-input" 
-                        style={{ padding: "8px 12px", fontSize: "13px" }}
-                        value={docTitle}
-                        onChange={(e) => { setDocTitle(e.target.value); setUploadError(""); }}
-                      />
-                      
-                      <label className="btn-secondary" style={{ padding: "8px 12px", fontSize: "13px", cursor: "pointer", display: "inline-flex" }}>
-                        <FileUp size={12} />
-                        {uploadedFileName ? (uploadedFileName.slice(0, 10) + "...") : (lang === "he" ? "בחר קובץ" : "Choose File")}
-                        <input 
-                          type="file" 
-                          accept="image/*,application/pdf" 
-                          className="file-upload-input" 
-                          onChange={handleFileUpload} 
-                        />
-                      </label>
-                    </div>
-                    {uploadError && <div style={{ color: "var(--danger)", fontSize: "11px", marginBottom: "6px" }}>{uploadError}</div>}
-                    
-                    <button 
-                      type="submit" 
-                      className="btn-primary" 
-                      style={{ width: "100%", padding: "8px", fontSize: "13px", borderRadius: "6px" }}
-                      disabled={isUploading}
-                    >
-                      {isUploading ? (lang === "he" ? "מעלה..." : "Uploading...") : (lang === "he" ? "צרף מסמך" : "Attach Document")}
-                    </button>
-                  </form>
                 </div>
 
                 {/* Footer buttons */}

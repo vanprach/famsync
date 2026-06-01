@@ -235,15 +235,6 @@ export default function Dashboard({
                 <Plane size={18} color="var(--primary)" />
                 {t.addTrip}
               </button>
-
-              <button 
-                onClick={onQuickUploadDoc}
-                className="btn-secondary" 
-                style={{ justifyContent: "flex-start", width: "100%" }}
-              >
-                <FileUp size={18} color="var(--primary)" />
-                {t.uploadDoc}
-              </button>
             </div>
           </div>
 

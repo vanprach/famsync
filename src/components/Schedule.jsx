@@ -33,6 +33,14 @@ export default function Schedule({
   const [registrationDate, setRegistrationDate] = useState("");
   const [cost, setCost] = useState("");
   const [paymentDate, setPaymentDate] = useState("");
+  const [activityType, setActivityType] = useState("kid"); // 'kid', 'parent', 'show'
+  
+  // Show specific fields
+  const [venue, setVenue] = useState("");
+  const [address, setAddress] = useState("");
+  const [row, setRow] = useState("");
+  const [seat, setSeat] = useState("");
+  
   const [error, setError] = useState("");
 
   // Edit Event State
@@ -44,13 +52,14 @@ export default function Schedule({
   const [editRegistrationDate, setEditRegistrationDate] = useState("");
   const [editCost, setEditCost] = useState("");
   const [editPaymentDate, setEditPaymentDate] = useState("");
+  const [editActivityType, setEditActivityType] = useState("kid");
+  const [editVenue, setEditVenue] = useState("");
+  const [editAddress, setEditAddress] = useState("");
+  const [editRow, setEditRow] = useState("");
+  const [editSeat, setEditSeat] = useState("");
   const [editError, setEditError] = useState("");
 
-  // Inline Document Upload State
-  const [docTitle, setDocTitle] = useState("");
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [uploadedFileName, setUploadedFileName] = useState("");
-  const [uploadError, setUploadError] = useState("");
+  // Upload progress state
   const [isUploading, setIsUploading] = useState(false);
 
   const getMember = (id) => {
@@ -68,7 +77,6 @@ export default function Schedule({
       return;
     }
 
-    const member = getMember(memberId);
     const newActivity = {
       id: `sch-${Date.now()}`,
       title: title.trim(),
@@ -77,10 +85,14 @@ export default function Schedule({
       startTime,
       endTime,
       isRecurring: true,
-      type: member.role, // 'parent' or 'kid'
+      type: activityType, // 'kid', 'parent', 'show'
       registrationDate,
       cost: cost ? parseFloat(cost) : "",
       paymentDate,
+      venue: activityType === "show" ? venue.trim() : "",
+      address: activityType === "show" ? address.trim() : "",
+      row: activityType === "show" ? row.trim() : "",
+      seat: activityType === "show" ? seat.trim() : "",
       documents: [] // Attached documents
     };
 
@@ -94,6 +106,11 @@ export default function Schedule({
     setRegistrationDate("");
     setCost("");
     setPaymentDate("");
+    setActivityType("kid");
+    setVenue("");
+    setAddress("");
+    setRow("");
+    setSeat("");
     setShowAddModal(false);
     setError("");
   };
@@ -108,6 +125,11 @@ export default function Schedule({
     setEditRegistrationDate(event.registrationDate || "");
     setEditCost(event.cost || "");
     setEditPaymentDate(event.paymentDate || "");
+    setEditActivityType(event.type || "kid");
+    setEditVenue(event.venue || "");
+    setEditAddress(event.address || "");
+    setEditRow(event.row || "");
+    setEditSeat(event.seat || "");
     setIsEditing(true);
   };
 
@@ -119,7 +141,6 @@ export default function Schedule({
     }
 
     const activeEvent = getActiveEvent();
-    const member = getMember(editMemberId);
     
     const updatedActivity = {
       ...activeEvent,
@@ -128,10 +149,14 @@ export default function Schedule({
       days: editDays,
       startTime: editStartTime,
       endTime: editEndTime,
-      type: member.role,
+      type: editActivityType,
       registrationDate: editRegistrationDate,
       cost: editCost ? parseFloat(editCost) : "",
-      paymentDate: editPaymentDate
+      paymentDate: editPaymentDate,
+      venue: editActivityType === "show" ? editVenue.trim() : "",
+      address: editActivityType === "show" ? editAddress.trim() : "",
+      row: editActivityType === "show" ? editRow.trim() : "",
+      seat: editActivityType === "show" ? editSeat.trim() : ""
     };
 
     onSaveSchedule(updatedActivity);
@@ -139,40 +164,23 @@ export default function Schedule({
     setEditError("");
   };
 
-  // Inline Document Upload logic
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    setSelectedFile(file);
-    setUploadedFileName(file.name);
-    if (!docTitle) {
-      setDocTitle(file.name.split(".")[0]);
-    }
-  };
-
-  const handleSaveDocument = async (e) => {
-    e.preventDefault();
-    if (!docTitle.trim()) {
-      setUploadError(t.requiredField);
-      return;
-    }
-
+  // Upload to slot logic
+  const uploadToSlot = async (file, slotType, slotTitleHebrew) => {
     const activeEvent = getActiveEvent();
-    if (!activeEvent) return;
+    if (!activeEvent || !file) return;
 
     setIsUploading(true);
+    audioEngine.playSFX("click");
     const docId = `doc-${Date.now()}`;
-    const fileName = uploadedFileName || "receipt.png";
+    const fileName = file.name;
 
-    let fileUrl = MOCK_RECEIPT_URL;
-    if (selectedFile) {
-      fileUrl = await storageAPI.uploadDocumentFile(selectedFile);
-    }
+    const fileUrl = await storageAPI.uploadDocumentFile(file);
 
     const newDoc = {
       id: docId,
-      title: docTitle.trim(),
+      title: `${slotTitleHebrew} - ${activeEvent.title}`,
       category: "courses",
+      subType: slotType, // Store slot subType
       memberId: activeEvent.memberId,
       fileName,
       fileUrl,
@@ -189,13 +197,8 @@ export default function Schedule({
     };
 
     await onSaveSchedule(updatedActivity);
-
-    // Reset Upload fields
-    setDocTitle("");
-    setSelectedFile(null);
-    setUploadedFileName("");
-    setUploadError("");
     setIsUploading(false);
+    audioEngine.playSFX("success");
   };
 
   const handleOpenDetails = (event) => {
@@ -220,6 +223,58 @@ export default function Schedule({
         return sch.day === dayName; // backward compatibility
       })
       .sort((a, b) => a.startTime.localeCompare(b.startTime));
+  };
+
+  const renderUploadSlot = (slotType, slotLabel, slotTitleHebrew) => {
+    const activeEvent = getActiveEvent();
+    if (!activeEvent) return null;
+
+    const docs = (activeEvent.documents || []).filter(d => d.subType === slotType);
+
+    return (
+      <div style={{ background: "rgba(255,255,255,0.01)", border: "1px solid var(--border-glass)", borderRadius: "12px", padding: "14px", marginTop: "12px" }}>
+        <h5 style={{ fontSize: "14px", fontWeight: "750", marginBottom: "8px", color: "var(--primary)" }}>
+          📂 {slotLabel}
+        </h5>
+        
+        {docs.length > 0 ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "8px" }}>
+            {docs.map(doc => (
+              <div key={doc.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "12px", padding: "6px 10px", background: "rgba(255,255,255,0.02)", borderRadius: "8px", border: "1px solid var(--border-glass)" }}>
+                <span style={{ maxWidth: "70%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.fileName}</span>
+                <button 
+                  onClick={(e) => { e.stopPropagation(); setSelectedDocPreview(doc); }} 
+                  className="inline-doc-link" 
+                  style={{ fontSize: "11px", border: "none", background: "transparent", cursor: "pointer", color: "var(--primary)", display: "flex", alignItems: "center", gap: "4px" }}
+                >
+                  <ExternalLink size={10} />
+                  {lang === "he" ? "הצג" : "View"}
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "8px", fontStyle: "italic" }}>
+            {lang === "he" ? "אין קבצים" : "No files attached"}
+          </div>
+        )}
+
+        <label className="btn-secondary" style={{ padding: "6px 12px", fontSize: "12px", cursor: "pointer", display: "inline-flex", width: "100%", justifyContent: "center", borderRadius: "8px" }}>
+          <FileUp size={12} />
+          {lang === "he" ? `העלה ${slotTitleHebrew}` : `Upload ${slotTitleHebrew}`}
+          <input 
+            type="file" 
+            accept="image/*,application/pdf" 
+            className="file-upload-input" 
+            disabled={isUploading}
+            onChange={(e) => {
+              const file = e.target.files[0];
+              if (file) uploadToSlot(file, slotType, slotTitleHebrew);
+            }} 
+          />
+        </label>
+      </div>
+    );
   };
 
   const activeEvent = getActiveEvent();
@@ -335,15 +390,29 @@ export default function Schedule({
             </h3>
 
             <form onSubmit={handleSave}>
+              {/* Event Type Select */}
+              <div className="form-group">
+                <label>{lang === "he" ? "סוג האירוע" : "Event Type"}</label>
+                <select 
+                  className="form-select"
+                  value={activityType}
+                  onChange={(e) => setActivityType(e.target.value)}
+                >
+                  <option value="kid">{lang === "he" ? "👦 חוג ילדים" : "Kids Course"}</option>
+                  <option value="parent">{lang === "he" ? "🧘 חוג מבוגרים" : "Adults Course"}</option>
+                  <option value="show">{lang === "he" ? "🎬 הצגה / סרט / מופע" : "Show / Movie"}</option>
+                </select>
+              </div>
+
               {/* Activity Title */}
               <div className="form-group">
-                <label>{t.activityName}</label>
+                <label>{activityType === "show" ? (lang === "he" ? "שם המופע / סרט" : "Show/Movie Name") : t.activityName}</label>
                 <input 
                   type="text" 
                   className="form-input"
                   value={title}
                   onChange={(e) => { setTitle(e.target.value); setError(""); }}
-                  placeholder={lang === "he" ? "למשל: שיעור גיטרה, אימון כושר" : "e.g. Guitar Lesson, Workout"}
+                  placeholder={activityType === "show" ? (lang === "he" ? "למשל: המלט, מלך האריות" : "e.g. Hamlet") : (lang === "he" ? "למשל: שיעור גיטרה, אימון כושר" : "e.g. Guitar Lesson, Workout")}
                 />
                 {error && <span style={{ color: "var(--danger)", fontSize: "12px" }}>{error}</span>}
               </div>
@@ -358,11 +427,42 @@ export default function Schedule({
                 >
                   {family.members.map(m => (
                     <option key={m.id} value={m.id}>
-                      {m.name} ({m.role === "parent" ? t.roleParent : t.roleKid})
+                      {m.name}
                     </option>
                   ))}
                 </select>
               </div>
+
+              {/* Show Specific Fields */}
+              {activityType === "show" && (
+                <div style={{ background: "rgba(255,255,255,0.01)", border: "1px solid var(--border-glass)", borderRadius: "12px", padding: "16px", marginBottom: "16px" }}>
+                  <h4 style={{ fontSize: "14px", fontWeight: "bold", marginBottom: "12px", color: "var(--primary)" }}>
+                    {lang === "he" ? "פרטי המיקום והישיבה" : "Venue & Seating Details"}
+                  </h4>
+                  
+                  <div className="grid-cols-2">
+                    <div className="form-group">
+                      <label>{lang === "he" ? "שם האולם/מיקום" : "Venue Name"}</label>
+                      <input type="text" className="form-input" value={venue} onChange={(e) => setVenue(e.target.value)} placeholder={lang === "he" ? "תיאטרון הבימה, סינמה סיטי" : "e.g. Theater"} />
+                    </div>
+                    <div className="form-group">
+                      <label>{lang === "he" ? "כתובת האירוע" : "Address"}</label>
+                      <input type="text" className="form-input" value={address} onChange={(e) => setAddress(e.target.value)} placeholder={lang === "he" ? "שדרות תרס\"ט 2, תל אביב" : "Address"} />
+                    </div>
+                  </div>
+                  
+                  <div className="grid-cols-2" style={{ marginBottom: 0 }}>
+                    <div className="form-group">
+                      <label>{lang === "he" ? "שורה" : "Row"}</label>
+                      <input type="text" className="form-input" value={row} onChange={(e) => setRow(e.target.value)} placeholder="5" />
+                    </div>
+                    <div className="form-group">
+                      <label>{lang === "he" ? "כיסא" : "Seat"}</label>
+                      <input type="text" className="form-input" value={seat} onChange={(e) => setSeat(e.target.value)} placeholder="12" />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Select Days (Checkbox Group) */}
               <div className="form-group">
@@ -409,44 +509,46 @@ export default function Schedule({
                 </div>
               </div>
 
-              {/* Dynamic Goal-Oriented Fields */}
-              <div style={{ background: "rgba(255,255,255,0.01)", border: "1px solid var(--border-glass)", borderRadius: "12px", padding: "16px", marginBottom: "16px" }}>
-                <h4 style={{ fontSize: "14px", fontWeight: "bold", marginBottom: "12px" }}>
-                  {lang === "he" ? "פרטי רישום ותשלום (אופציונלי)" : "Registration & Cost details (Optional)"}
-                </h4>
-                
-                <div className="form-group">
-                  <label>{lang === "he" ? "תאריך רישום" : "Registration Date"}</label>
-                  <input 
-                    type="date" 
-                    className="form-input" 
-                    value={registrationDate} 
-                    onChange={(e) => setRegistrationDate(e.target.value)} 
-                  />
-                </div>
-                
-                <div className="grid-cols-2" style={{ marginBottom: 0 }}>
+              {/* Dynamic Goal-Oriented Fields (For courses) */}
+              {activityType !== "show" && (
+                <div style={{ background: "rgba(255,255,255,0.01)", border: "1px solid var(--border-glass)", borderRadius: "12px", padding: "16px", marginBottom: "16px" }}>
+                  <h4 style={{ fontSize: "14px", fontWeight: "bold", marginBottom: "12px" }}>
+                    {lang === "he" ? "פרטי רישום ותשלום (אופציונלי)" : "Registration & Cost details (Optional)"}
+                  </h4>
+                  
                   <div className="form-group">
-                    <label>{lang === "he" ? "סכום ששולם" : "Paid Amount"}</label>
-                    <input 
-                      type="number" 
-                      className="form-input" 
-                      value={cost} 
-                      onChange={(e) => setCost(e.target.value)} 
-                      placeholder="₪"
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>{lang === "he" ? "תאריך תשלום" : "Payment Date"}</label>
+                    <label>{lang === "he" ? "תאריך רישום" : "Registration Date"}</label>
                     <input 
                       type="date" 
                       className="form-input" 
-                      value={paymentDate} 
-                      onChange={(e) => setPaymentDate(e.target.value)} 
+                      value={registrationDate} 
+                      onChange={(e) => setRegistrationDate(e.target.value)} 
                     />
                   </div>
+                  
+                  <div className="grid-cols-2" style={{ marginBottom: 0 }}>
+                    <div className="form-group">
+                      <label>{lang === "he" ? "סכום ששולם" : "Paid Amount"}</label>
+                      <input 
+                        type="number" 
+                        className="form-input" 
+                        value={cost} 
+                        onChange={(e) => setCost(e.target.value)} 
+                        placeholder="₪"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>{lang === "he" ? "תאריך תשלום" : "Payment Date"}</label>
+                      <input 
+                        type="date" 
+                        className="form-input" 
+                        value={paymentDate} 
+                        onChange={(e) => setPaymentDate(e.target.value)} 
+                      />
+                    </div>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Actions */}
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "24px" }}>
@@ -479,8 +581,10 @@ export default function Schedule({
               <div>
                 <span className={`smart-badge ${activeEvent.type}`}>
                   {activeEvent.type === "parent" 
-                    ? (lang === "he" ? "אירוע מבוגרים" : "Adults Course") 
-                    : (lang === "he" ? "אירוע ילדים" : "Kids Course")}
+                    ? (lang === "he" ? "חוג מבוגרים" : "Adults Course") 
+                    : activeEvent.type === "show" 
+                    ? (lang === "he" ? "מופע / הצגה / סרט" : "Show / Movie")
+                    : (lang === "he" ? "חוג ילדים" : "Kids Course")}
                 </span>
                 <h3 style={{ fontSize: "22px", fontWeight: "800", marginTop: "8px" }}>{activeEvent.title}</h3>
               </div>
@@ -495,6 +599,19 @@ export default function Schedule({
             {isEditing ? (
               // EDIT FORM inside Details Modal
               <form onSubmit={handleSaveEdit}>
+                <div className="form-group">
+                  <label>{lang === "he" ? "סוג האירוע" : "Event Type"}</label>
+                  <select 
+                    className="form-select"
+                    value={editActivityType}
+                    onChange={(e) => setEditActivityType(e.target.value)}
+                  >
+                    <option value="kid">{lang === "he" ? "👦 חוג ילדים" : "Kids Course"}</option>
+                    <option value="parent">{lang === "he" ? "🧘 חוג מבוגרים" : "Adults Course"}</option>
+                    <option value="show">{lang === "he" ? "🎬 הצגה / סרט / מופע" : "Show / Movie"}</option>
+                  </select>
+                </div>
+
                 <div className="form-group">
                   <label>{t.activityName}</label>
                   <input 
@@ -520,6 +637,33 @@ export default function Schedule({
                     ))}
                   </select>
                 </div>
+
+                {/* Edit Show Fields */}
+                {editActivityType === "show" && (
+                  <div style={{ background: "rgba(255,255,255,0.01)", border: "1px solid var(--border-glass)", borderRadius: "12px", padding: "16px", marginBottom: "16px" }}>
+                    <div className="grid-cols-2">
+                      <div className="form-group">
+                        <label>{lang === "he" ? "שם האולם/מיקום" : "Venue Name"}</label>
+                        <input type="text" className="form-input" value={editVenue} onChange={(e) => setEditVenue(e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label>{lang === "he" ? "כתובת האירוע" : "Address"}</label>
+                        <input type="text" className="form-input" value={editAddress} onChange={(e) => setEditAddress(e.target.value)} />
+                      </div>
+                    </div>
+                    
+                    <div className="grid-cols-2" style={{ marginBottom: 0 }}>
+                      <div className="form-group">
+                        <label>{lang === "he" ? "שורה" : "Row"}</label>
+                        <input type="text" className="form-input" value={editRow} onChange={(e) => setEditRow(e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label>{lang === "he" ? "כיסא" : "Seat"}</label>
+                        <input type="text" className="form-input" value={editSeat} onChange={(e) => setEditSeat(e.target.value)} />
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div className="form-group">
                   <label>{t.selectDay}</label>
@@ -564,37 +708,39 @@ export default function Schedule({
                   </div>
                 </div>
 
-                <div style={{ background: "rgba(255,255,255,0.01)", border: "1px solid var(--border-glass)", borderRadius: "12px", padding: "16px", marginBottom: "16px" }}>
-                  <div className="form-group">
-                    <label>{lang === "he" ? "תאריך רישום" : "Registration Date"}</label>
-                    <input 
-                      type="date" 
-                      className="form-input" 
-                      value={editRegistrationDate}
-                      onChange={(e) => setEditRegistrationDate(e.target.value)}
-                    />
-                  </div>
-                  <div className="grid-cols-2" style={{ marginBottom: 0 }}>
+                {editActivityType !== "show" && (
+                  <div style={{ background: "rgba(255,255,255,0.01)", border: "1px solid var(--border-glass)", borderRadius: "12px", padding: "16px", marginBottom: "16px" }}>
                     <div className="form-group">
-                      <label>{lang === "he" ? "סכום ששולם" : "Paid Amount"}</label>
-                      <input 
-                        type="number" 
-                        className="form-input" 
-                        value={editCost}
-                        onChange={(e) => setEditCost(e.target.value)}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>{lang === "he" ? "תאריך תשלום" : "Payment Date"}</label>
+                      <label>{lang === "he" ? "תאריך רישום" : "Registration Date"}</label>
                       <input 
                         type="date" 
                         className="form-input" 
-                        value={editPaymentDate}
-                        onChange={(e) => setEditPaymentDate(e.target.value)}
+                        value={editRegistrationDate}
+                        onChange={(e) => setEditRegistrationDate(e.target.value)}
                       />
                     </div>
+                    <div className="grid-cols-2" style={{ marginBottom: 0 }}>
+                      <div className="form-group">
+                        <label>{lang === "he" ? "סכום ששולם" : "Paid Amount"}</label>
+                        <input 
+                          type="number" 
+                          className="form-input" 
+                          value={editCost}
+                          onChange={(e) => setEditCost(e.target.value)}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>{lang === "he" ? "תאריך תשלום" : "Payment Date"}</label>
+                        <input 
+                          type="date" 
+                          className="form-input" 
+                          value={editPaymentDate}
+                          onChange={(e) => setEditPaymentDate(e.target.value)}
+                        />
+                      </div>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div style={{ display: "flex", gap: "10px", marginTop: "20px" }}>
                   <button type="button" onClick={() => setIsEditing(false)} className="btn-secondary" style={{ flex: 1 }}>
@@ -690,78 +836,62 @@ export default function Schedule({
                     </div>
                   )}
 
+                  {/* Dynamic Fields: Show / Movie details */}
+                  {activeEvent.type === "show" && (
+                    <div style={{ padding: "16px", borderRadius: "12px", background: "rgba(59, 130, 246, 0.05)", border: "1px solid rgba(59, 130, 246, 0.15)", display: "flex", flexDirection: "column", gap: "8px", fontSize: "14px" }}>
+                      <h4 style={{ fontWeight: "700", color: "var(--info)" }}>🎬 {lang === "he" ? "פרטי מופע / הצגה / סרט" : "Show / Movie Details"}</h4>
+                      
+                      {activeEvent.venue && (
+                        <div>
+                          <strong>{lang === "he" ? "מיקום/אולם:" : "Venue:"}</strong> {activeEvent.venue}
+                          {activeEvent.address && ` (${activeEvent.address})`}
+                        </div>
+                      )}
+
+                      {(activeEvent.row || activeEvent.seat) && (
+                        <div>
+                          <strong>{lang === "he" ? "מקום ישיבה:" : "Seating:"}</strong>{" "}
+                          {activeEvent.row && `${lang === "he" ? "שורה" : "Row"} ${activeEvent.row}`}{" "}
+                          {activeEvent.seat && `${lang === "he" ? "כיסא" : "Seat"} ${activeEvent.seat}`}
+                        </div>
+                      )}
+
+                      {(!activeEvent.venue && !activeEvent.row && !activeEvent.seat) && (
+                        <div style={{ fontSize: "12px", color: "var(--text-muted)", fontStyle: "italic" }}>
+                          {lang === "he" ? "אין מידע על המיקום והישיבה. לחץ 'ערוך' להזנת פרטים." : "No venue or seating details logged. Click 'Edit' to add details."}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                 </div>
 
-                {/* Inline Documents list & Uploader */}
+                {/* Inline Documents specific slots */}
                 <div style={{ marginTop: "20px", paddingTop: "16px", borderTop: "1px solid var(--border-glass)" }}>
-                  <h4 style={{ fontSize: "14px", fontWeight: "700", color: "var(--text-secondary)", marginBottom: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
-                    <Paperclip size={14} />
-                    {t.documentsAttached} ({(activeEvent.documents && activeEvent.documents.length) || 0})
+                  <h4 style={{ fontSize: "15px", fontWeight: "700", color: "var(--text-secondary)", marginBottom: "8px" }}>
+                    📎 {lang === "he" ? "מסמכים וקבלות מצורפים" : "Attached Event Documents"}
                   </h4>
 
-                  {/* Render inline documents */}
-                  <div className="inline-docs-container">
-                    {activeEvent.documents && activeEvent.documents.map(doc => (
-                      <div key={doc.id} className="inline-doc-item">
-                        <span style={{ fontWeight: "600" }}>{doc.title}</span>
-                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                          <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>({doc.fileName})</span>
-                          <button 
-                            onClick={() => setSelectedDocPreview(doc)} 
-                            className="inline-doc-link"
-                          >
-                            <ExternalLink size={12} />
-                            {lang === "he" ? "הצג" : "View"}
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                    {(!activeEvent.documents || activeEvent.documents.length === 0) && (
-                      <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
-                        {lang === "he" ? "אין מסמכים מצורפים לאירוע זה" : "No documents attached to this event"}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Inline file upload form */}
-                  <form onSubmit={handleSaveDocument} style={{ marginTop: "16px", padding: "12px", background: "rgba(255,255,255,0.01)", border: "1px dashed var(--border-glass)", borderRadius: "8px" }}>
-                    <h5 style={{ fontSize: "13px", fontWeight: "700", marginBottom: "8px" }}>
-                      {lang === "he" ? "העלאת קבלה / מסמך לאירוע" : "Attach a receipt/document to this event"}
-                    </h5>
-                    
-                    <div className="grid-cols-2" style={{ gap: "8px", marginBottom: "10px" }}>
-                      <input 
-                        type="text" 
-                        placeholder={lang === "he" ? "כותרת (למשל: קבלה לחוג)" : "Title (e.g. Receipt)"}
-                        className="form-input" 
-                        style={{ padding: "8px 12px", fontSize: "13px" }}
-                        value={docTitle}
-                        onChange={(e) => { setDocTitle(e.target.value); setUploadError(""); }}
-                      />
-                      
-                      <label className="btn-secondary" style={{ padding: "8px 12px", fontSize: "13px", cursor: "pointer", display: "inline-flex" }}>
-                        <FileUp size={12} />
-                        {uploadedFileName ? (uploadedFileName.slice(0, 10) + "...") : (lang === "he" ? "בחר קובץ" : "Choose File")}
-                        <input 
-                          type="file" 
-                          accept="image/*,application/pdf" 
-                          className="file-upload-input" 
-                          onChange={handleFileUpload} 
-                        />
-                      </label>
+                  {/* Render Slots based on Event Type */}
+                  {activeEvent.type === "kid" && (
+                    <div>
+                      {renderUploadSlot("registration", lang === "he" ? "אישורי רישום" : "Registration Approval", lang === "he" ? "אישור רישום" : "Registration Approval")}
+                      {renderUploadSlot("payment", lang === "he" ? "קבלות תשלום לחוג" : "Tuition Receipts", lang === "he" ? "קבלה" : "Receipt")}
                     </div>
-                    {uploadError && <div style={{ color: "var(--danger)", fontSize: "11px", marginBottom: "6px" }}>{uploadError}</div>}
-                    
-                    <button 
-                      type="submit" 
-                      className="btn-primary" 
-                      style={{ width: "100%", padding: "8px", fontSize: "13px", borderRadius: "6px" }}
-                      disabled={isUploading}
-                    >
-                      {isUploading ? (lang === "he" ? "מעלה..." : "Uploading...") : (lang === "he" ? "צרף מסמך" : "Attach Document")}
-                    </button>
-                  </form>
+                  )}
 
+                  {activeEvent.type === "parent" && (
+                    <div>
+                      {renderUploadSlot("membership", lang === "he" ? "קבלות ומסמכי מנוי" : "Training/Membership Receipts", lang === "he" ? "קבלה" : "Receipt")}
+                    </div>
+                  )}
+
+                  {activeEvent.type === "show" && (
+                    <div>
+                      {renderUploadSlot("ticket", lang === "he" ? "כרטיסי כניסה אלקטרוניים" : "Admission Tickets", lang === "he" ? "כרטיס כניסה" : "Admission Ticket")}
+                      {renderUploadSlot("receipt", lang === "he" ? "קבלות ורכישות" : "Receipts & Invoices", lang === "he" ? "קבלה" : "Receipt")}
+                    </div>
+                  )}
                 </div>
 
                 {/* Footer buttons */}
