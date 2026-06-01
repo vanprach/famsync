@@ -168,12 +168,15 @@ export default function Dashboard({
                 {trips.map(trip => (
                   <div 
                     key={trip.id} 
+                    className="dashboard-trip-card"
                     style={{ 
                       padding: "16px", 
                       borderRadius: "12px", 
                       background: "rgba(255,255,255,0.01)", 
-                      border: "1px solid var(--border-glass)" 
+                      border: "1px solid var(--border-glass)",
+                      cursor: "pointer"
                     }}
+                    onClick={() => onNavigate("travel")}
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px", fontWeight: "700" }}>
                       <span>{trip.name}</span>
