@@ -12,6 +12,7 @@ export default function Schedule({
   onSaveSchedule, 
   onDeleteSchedule, 
   onSaveDocument, 
+  onDeleteDocument,
   lang 
 }) {
   const t = translations[lang];
@@ -229,15 +230,27 @@ export default function Schedule({
             {docs.map(doc => (
               <div key={doc.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "12px", padding: "6px 10px", background: "rgba(255,255,255,0.02)", borderRadius: "8px", border: "1px solid var(--border-glass)" }}>
                 <span style={{ maxWidth: "70%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.fileName}</span>
-                <button 
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); setSelectedDocPreview(doc); }} 
-                  className="inline-doc-link" 
-                  style={{ fontSize: "11px", border: "none", background: "transparent", cursor: "pointer", color: "var(--primary)", display: "flex", alignItems: "center", gap: "4px" }}
-                >
-                  <ExternalLink size={10} />
-                  {lang === "he" ? "הצג" : "View"}
-                </button>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <button 
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setSelectedDocPreview(doc); }} 
+                    className="inline-doc-link" 
+                    style={{ fontSize: "11px", border: "none", background: "transparent", cursor: "pointer", color: "var(--primary)", display: "flex", alignItems: "center", gap: "4px" }}
+                  >
+                    <ExternalLink size={10} />
+                    {lang === "he" ? "הצג" : "View"}
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setTempDocs(prev => prev.filter(d => d.id !== doc.id)); if (onDeleteDocument) onDeleteDocument(doc.id); }} 
+                    className="inline-doc-link" 
+                    style={{ fontSize: "11px", border: "none", background: "transparent", cursor: "pointer", color: "var(--danger)", display: "flex", alignItems: "center", gap: "4px" }}
+                    title={lang === "he" ? "מחק מסמך" : "Delete document"}
+                  >
+                    <Trash size={10} />
+                    {lang === "he" ? "מחק" : "Delete"}
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -302,6 +315,29 @@ export default function Schedule({
     audioEngine.playSFX("success");
   };
 
+  const handleDeleteSlotDoc = async (e, docId) => {
+    e.stopPropagation();
+    const activeEvent = getActiveEvent();
+    if (!activeEvent) return;
+
+    const confirmDel = window.confirm(lang === "he" ? "האם למחוק מסמך זה?" : "Delete this document?");
+    if (!confirmDel) return;
+
+    audioEngine.playSFX("delete");
+
+    // 1. Remove from activity's documents list
+    const updatedActivity = {
+      ...activeEvent,
+      documents: (activeEvent.documents || []).filter(d => d.id !== docId)
+    };
+    await onSaveSchedule(updatedActivity);
+
+    // 2. Remove globally
+    if (onDeleteDocument) {
+      await onDeleteDocument(docId);
+    }
+  };
+
   const handleOpenDetails = (event) => {
     audioEngine.playSFX("click");
     setSelectedEventId(event.id);
@@ -343,14 +379,27 @@ export default function Schedule({
             {docs.map(doc => (
               <div key={doc.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "12px", padding: "6px 10px", background: "rgba(255,255,255,0.02)", borderRadius: "8px", border: "1px solid var(--border-glass)" }}>
                 <span style={{ maxWidth: "70%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.fileName}</span>
-                <button 
-                  onClick={(e) => { e.stopPropagation(); setSelectedDocPreview(doc); }} 
-                  className="inline-doc-link" 
-                  style={{ fontSize: "11px", border: "none", background: "transparent", cursor: "pointer", color: "var(--primary)", display: "flex", alignItems: "center", gap: "4px" }}
-                >
-                  <ExternalLink size={10} />
-                  {lang === "he" ? "הצג" : "View"}
-                </button>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <button 
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setSelectedDocPreview(doc); }} 
+                    className="inline-doc-link" 
+                    style={{ fontSize: "11px", border: "none", background: "transparent", cursor: "pointer", color: "var(--primary)", display: "flex", alignItems: "center", gap: "4px" }}
+                  >
+                    <ExternalLink size={10} />
+                    {lang === "he" ? "הצג" : "View"}
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={(e) => handleDeleteSlotDoc(e, doc.id)} 
+                    className="inline-doc-link" 
+                    style={{ fontSize: "11px", border: "none", background: "transparent", cursor: "pointer", color: "var(--danger)", display: "flex", alignItems: "center", gap: "4px" }}
+                    title={lang === "he" ? "מחק מסמך" : "Delete document"}
+                  >
+                    <Trash size={10} />
+                    {lang === "he" ? "מחק" : "Delete"}
+                  </button>
+                </div>
               </div>
             ))}
           </div>

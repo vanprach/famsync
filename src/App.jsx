@@ -82,6 +82,14 @@ export default function App() {
     }
     return [];
   });
+  const [tasks, setTasks] = useState(() => {
+    const user = storageAPI.getCurrentUser();
+    if (user && user.familyId) {
+      const cached = storageAPI.getLocalBackup("famsync_tasks", {});
+      return cached[user.familyId] || [];
+    }
+    return [];
+  });
 
   // Load Google Identity Services SDK script on mount
   useEffect(() => {
@@ -115,13 +123,15 @@ export default function App() {
           
           if (activeFamily) {
             setFamily(activeFamily);
-            // Fetch schedules, trips and documents linked to this family
+            // Fetch schedules, trips, documents and tasks linked to this family
             const sch = await storageAPI.getSchedules(activeFamily.id);
             setSchedules(sch);
             const tr = await storageAPI.getTrips(activeFamily.id);
             setTrips(tr);
             const doc = await storageAPI.getDocuments(activeFamily.id);
             setDocuments(doc);
+            const tsk = await storageAPI.getTasks(activeFamily.id);
+            setTasks(tsk);
           } else {
             // If family was deleted or corrupted, reset user binding
             const resetUser = { ...currentUser, familyId: null };
@@ -153,11 +163,14 @@ export default function App() {
       setTrips(tr);
       const doc = await storageAPI.getDocuments(user.familyId);
       setDocuments(doc);
+      const tsk = await storageAPI.getTasks(user.familyId);
+      setTasks(tsk);
     } else {
       setFamily(null);
       setSchedules([]);
       setTrips([]);
       setDocuments([]);
+      setTasks([]);
     }
     setActiveTab("dashboard");
   };
@@ -174,6 +187,8 @@ export default function App() {
       setTrips(tr);
       const doc = await storageAPI.getDocuments(user.familyId);
       setDocuments(doc);
+      const tsk = await storageAPI.getTasks(user.familyId);
+      setTasks(tsk);
     }
     setActiveTab("dashboard");
   };
@@ -186,6 +201,7 @@ export default function App() {
     setSchedules([]);
     setTrips([]);
     setDocuments([]);
+    setTasks([]);
     setActiveTab("dashboard");
   };
 
@@ -242,6 +258,21 @@ export default function App() {
     audioEngine.playSFX("success");
     await storageAPI.saveFamily(updatedFamily);
     setFamily(updatedFamily);
+  };
+
+  const handleSaveTask = async (task) => {
+    if (!family) return;
+    await storageAPI.saveTask(family.id, task);
+    const tsk = await storageAPI.getTasks(family.id);
+    setTasks(tsk);
+  };
+
+  const handleDeleteTask = async (taskId) => {
+    if (!family) return;
+    audioEngine.playSFX("delete");
+    await storageAPI.deleteTask(family.id, taskId);
+    const tsk = await storageAPI.getTasks(family.id);
+    setTasks(tsk);
   };
 
   // Rendering screen selectors
@@ -374,6 +405,9 @@ export default function App() {
             onNavigate={handleTabChange}
             lang={lang}
             onQuickUploadDoc={() => handleTabChange("schedule")}
+            tasks={tasks}
+            onSaveTask={handleSaveTask}
+            onDeleteTask={handleDeleteTask}
           />
         )}
 
@@ -384,6 +418,7 @@ export default function App() {
             onSaveSchedule={handleSaveSchedule} 
             onDeleteSchedule={handleDeleteSchedule}
             onSaveDocument={handleSaveDocument}
+            onDeleteDocument={handleDeleteDocument}
             lang={lang}
           />
         )}
@@ -396,6 +431,7 @@ export default function App() {
             onSaveTrip={handleSaveTrip} 
             onDeleteTrip={handleDeleteTrip}
             onSaveDocument={handleSaveDocument}
+            onDeleteDocument={handleDeleteDocument}
             lang={lang}
           />
         )}

@@ -1,6 +1,7 @@
-import React from "react";
-import { Calendar, Plane, Plus, FileUp, Shield, HelpCircle } from "lucide-react";
+import React, { useState } from "react";
+import { Calendar, Plane, Plus, FileUp, Shield, HelpCircle, Trash, CheckSquare, Square, ListTodo, ShoppingCart } from "lucide-react";
 import { translations } from "../utils/translations";
+import { audioEngine } from "../utils/audio";
 
 export default function Dashboard({ 
   currentUser, 
@@ -9,10 +10,19 @@ export default function Dashboard({
   trips, 
   onNavigate,
   lang,
-  onQuickUploadDoc
+  onQuickUploadDoc,
+  tasks = [],
+  onSaveTask,
+  onDeleteTask
 }) {
   if (!family) return null;
   const t = translations[lang];
+
+  // Tab state for the Chores / Grocery widget
+  const [activeWidgetTab, setActiveWidgetTab] = useState("chores");
+  const [newChoreText, setNewChoreText] = useState("");
+  const [newChoreAssignee, setNewChoreAssignee] = useState("");
+  const [newGroceryText, setNewGroceryText] = useState("");
 
   // Helper to get today's day name in English (to map to schedule data)
   const getTodayDayName = () => {
@@ -23,12 +33,66 @@ export default function Dashboard({
 
   const todayDayName = getTodayDayName();
   
-  // Filter activities happening today
-  const todaySchedules = schedules.filter(sch => sch.day === todayDayName);
+  // Filter activities happening today (supporting multi-day arrays)
+  const todaySchedules = schedules.filter(sch => {
+    if (sch.days && Array.isArray(sch.days)) {
+      return sch.days.includes(todayDayName);
+    }
+    return sch.day === todayDayName;
+  });
 
   // Get member details helper
   const getMember = (memberId) => {
     return family.members.find(m => m.id === memberId) || {};
+  };
+
+  // Filter tasks into chores and grocery lists
+  const chores = tasks.filter(t => t.type === "chore");
+  const groceries = tasks.filter(t => t.type === "grocery");
+
+  const handleAddChore = (e) => {
+    e.preventDefault();
+    if (!newChoreText.trim()) return;
+    
+    audioEngine.playSFX("success");
+    const newTask = {
+      id: `task-${Date.now()}`,
+      title: newChoreText.trim(),
+      type: "chore",
+      completed: false,
+      memberId: newChoreAssignee || null
+    };
+    onSaveTask(newTask);
+    setNewChoreText("");
+    setNewChoreAssignee("");
+  };
+
+  const handleAddGrocery = (e) => {
+    e.preventDefault();
+    if (!newGroceryText.trim()) return;
+
+    audioEngine.playSFX("success");
+    const newTask = {
+      id: `task-${Date.now()}`,
+      title: newGroceryText.trim(),
+      type: "grocery",
+      completed: false
+    };
+    onSaveTask(newTask);
+    setNewGroceryText("");
+  };
+
+  const handleToggleTask = (task) => {
+    if (!task.completed) {
+      audioEngine.playSFX("success");
+    } else {
+      audioEngine.playSFX("click");
+    }
+    const updated = {
+      ...task,
+      completed: !task.completed
+    };
+    onSaveTask(updated);
   };
 
   return (
@@ -239,6 +303,237 @@ export default function Dashboard({
                 {t.addTrip}
               </button>
             </div>
+          </div>
+
+          {/* Family Chores & Grocery List Card */}
+          <div className="glass-panel" style={{ padding: "24px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "10px" }}>
+              <h3 className="section-title" style={{ margin: 0, display: "flex", alignItems: "center", gap: "8px" }}>
+                <ListTodo size={20} color="var(--primary)" />
+                {lang === "he" ? "מטלות וקניות" : "Chores & Groceries"}
+              </h3>
+              
+              <div style={{ display: "flex", background: "rgba(255,255,255,0.03)", borderRadius: "20px", padding: "2px", border: "1px solid var(--border-glass)" }}>
+                <button
+                  type="button"
+                  onClick={() => { audioEngine.playSFX("click"); setActiveWidgetTab("chores"); }}
+                  style={{
+                    background: activeWidgetTab === "chores" ? "var(--primary)" : "transparent",
+                    color: activeWidgetTab === "chores" ? "#ffffff" : "var(--text-secondary)",
+                    border: "none",
+                    borderRadius: "18px",
+                    padding: "6px 14px",
+                    fontSize: "12px",
+                    fontWeight: "bold",
+                    cursor: "pointer",
+                    transition: "all 0.2s ease"
+                  }}
+                >
+                  {lang === "he" ? "מטלות" : "Chores"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { audioEngine.playSFX("click"); setActiveWidgetTab("grocery"); }}
+                  style={{
+                    background: activeWidgetTab === "grocery" ? "var(--primary)" : "transparent",
+                    color: activeWidgetTab === "grocery" ? "#ffffff" : "var(--text-secondary)",
+                    border: "none",
+                    borderRadius: "18px",
+                    padding: "6px 14px",
+                    fontSize: "12px",
+                    fontWeight: "bold",
+                    cursor: "pointer",
+                    transition: "all 0.2s ease"
+                  }}
+                >
+                  {lang === "he" ? "קניות" : "Groceries"}
+                </button>
+              </div>
+            </div>
+
+            {/* TAB CONTENT: CHORES */}
+            {activeWidgetTab === "chores" && (
+              <div>
+                {/* Add Chore form */}
+                <form onSubmit={handleAddChore} style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
+                  <input
+                    type="text"
+                    value={newChoreText}
+                    onChange={(e) => setNewChoreText(e.target.value)}
+                    placeholder={lang === "he" ? "הוסף מטלה משפחתית..." : "Add a family chore..."}
+                    className="form-input"
+                    style={{ flexGrow: 1, padding: "8px 12px", fontSize: "13px", height: "38px" }}
+                  />
+                  <select
+                    value={newChoreAssignee}
+                    onChange={(e) => setNewChoreAssignee(e.target.value)}
+                    className="form-select"
+                    style={{ width: "90px", padding: "8px", fontSize: "13px", height: "38px" }}
+                  >
+                    <option value="">{lang === "he" ? "מי?" : "Who?"}</option>
+                    {family.members.map(m => (
+                      <option key={m.id} value={m.id}>{m.name}</option>
+                    ))}
+                  </select>
+                  <button type="submit" className="btn-primary" style={{ padding: "0 14px", height: "38px", minWidth: "50px", justifyContent: "center" }}>
+                    <Plus size={16} />
+                  </button>
+                </form>
+
+                {/* Chores List */}
+                <div className="custom-scrollbar" style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "200px", overflowY: "auto", paddingLeft: "4px", paddingRight: "4px" }}>
+                  {chores.length === 0 ? (
+                    <div style={{ textAlign: "center", padding: "20px", color: "var(--text-muted)", fontSize: "13px", fontStyle: "italic" }}>
+                      {lang === "he" ? "אין מטלות פתוחות" : "No open chores"}
+                    </div>
+                  ) : (
+                    chores.map(chore => {
+                      const assignee = chore.memberId ? getMember(chore.memberId) : null;
+                      return (
+                        <div
+                          key={chore.id}
+                          className="task-item-card"
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            padding: "10px 12px",
+                            background: chore.completed ? "rgba(255,255,255,0.01)" : "rgba(255,255,255,0.02)",
+                            border: "1px solid var(--border-glass)",
+                            borderRadius: "10px",
+                            opacity: chore.completed ? 0.65 : 1,
+                            transition: "all 0.3s ease"
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: "10px", width: "70%" }}>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleTask(chore)}
+                              style={{ background: "transparent", border: "none", color: "var(--primary)", cursor: "pointer", display: "flex", alignItems: "center", padding: 0 }}
+                            >
+                              {chore.completed ? (
+                                <CheckSquare size={18} color="var(--success)" style={{ stroke: "var(--success)" }} />
+                              ) : (
+                                <Square size={18} color="var(--text-secondary)" />
+                              )}
+                            </button>
+                            <span style={{
+                              fontSize: "13px",
+                              textDecoration: chore.completed ? "line-through" : "none",
+                              color: chore.completed ? "var(--text-muted)" : "var(--text-primary)",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap"
+                            }}>
+                              {chore.title}
+                            </span>
+                          </div>
+
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                            {assignee && assignee.avatar && (
+                              <img
+                                src={assignee.avatar}
+                                title={assignee.name}
+                                style={{ width: "20px", height: "20px", borderRadius: "50%", border: `1.5px solid ${assignee.color || "var(--primary)"}`, objectFit: "cover" }}
+                                alt={assignee.name}
+                              />
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => { audioEngine.playSFX("click"); onDeleteTask(chore.id); }}
+                              style={{ background: "transparent", border: "none", color: "var(--danger)", cursor: "pointer", padding: "4px", display: "flex", alignItems: "center" }}
+                              title={lang === "he" ? "מחק מטלה" : "Delete chore"}
+                            >
+                              <Trash size={13} />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* TAB CONTENT: GROCERY */}
+            {activeWidgetTab === "grocery" && (
+              <div>
+                {/* Add Grocery form */}
+                <form onSubmit={handleAddGrocery} style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
+                  <input
+                    type="text"
+                    value={newGroceryText}
+                    onChange={(e) => setNewGroceryText(e.target.value)}
+                    placeholder={lang === "he" ? "הוסף מוצר לרשימה..." : "Add item to list..."}
+                    className="form-input"
+                    style={{ flexGrow: 1, padding: "8px 12px", fontSize: "13px", height: "38px" }}
+                  />
+                  <button type="submit" className="btn-primary" style={{ padding: "0 14px", height: "38px", minWidth: "50px", justifyContent: "center" }}>
+                    <Plus size={16} />
+                  </button>
+                </form>
+
+                {/* Grocery List */}
+                <div className="custom-scrollbar" style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "200px", overflowY: "auto", paddingLeft: "4px", paddingRight: "4px" }}>
+                  {groceries.length === 0 ? (
+                    <div style={{ textAlign: "center", padding: "20px", color: "var(--text-muted)", fontSize: "13px", fontStyle: "italic" }}>
+                      {lang === "he" ? "הרשימה ריקה" : "The list is empty"}
+                    </div>
+                  ) : (
+                    groceries.map(item => (
+                      <div
+                        key={item.id}
+                        className="task-item-card"
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          padding: "10px 12px",
+                          background: item.completed ? "rgba(255,255,255,0.01)" : "rgba(255,255,255,0.02)",
+                          border: "1px solid var(--border-glass)",
+                          borderRadius: "10px",
+                          opacity: item.completed ? 0.65 : 1,
+                          transition: "all 0.3s ease"
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px", width: "85%" }}>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleTask(item)}
+                            style={{ background: "transparent", border: "none", color: "var(--primary)", cursor: "pointer", display: "flex", alignItems: "center", padding: 0 }}
+                          >
+                            {item.completed ? (
+                              <CheckSquare size={18} color="var(--success)" style={{ stroke: "var(--success)" }} />
+                            ) : (
+                              <Square size={18} color="var(--text-secondary)" />
+                            )}
+                          </button>
+                          <span style={{
+                            fontSize: "13px",
+                            textDecoration: item.completed ? "line-through" : "none",
+                            color: item.completed ? "var(--text-muted)" : "var(--text-primary)",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap"
+                          }}>
+                            {item.title}
+                          </span>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => { audioEngine.playSFX("click"); onDeleteTask(item.id); }}
+                          style={{ background: "transparent", border: "none", color: "var(--danger)", cursor: "pointer", padding: "4px", display: "flex", alignItems: "center" }}
+                          title={lang === "he" ? "מחק מוצר" : "Delete item"}
+                        >
+                          <Trash size={13} />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Quick Info Box */}

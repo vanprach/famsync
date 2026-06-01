@@ -115,6 +115,19 @@ export default async function handler(req, res) {
         return res.status(200).json({ success: true });
       }
 
+      // Tasks CRUD
+      case "getTasks": {
+        if (!familyId) return res.status(400).json({ error: "Family ID is required" });
+        const tasks = await kv.get(`famsync_tasks:${familyId}`) || [];
+        return res.status(200).json({ tasks });
+      }
+
+      case "saveTasks": {
+        if (!familyId || !data) return res.status(400).json({ error: "Family ID and tasks data required" });
+        await kv.set(`famsync_tasks:${familyId}`, data);
+        return res.status(200).json({ success: true });
+      }
+
       default:
         return res.status(400).json({ error: `Unknown action: ${action}` });
     }

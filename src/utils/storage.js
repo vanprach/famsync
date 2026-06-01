@@ -263,6 +263,52 @@ export const storageAPI = {
     await callAPI("saveDocuments", { familyId, data: updated });
   },
 
+  // Chores & Tasks CRUD
+  async getTasks(familyId) {
+    if (!familyId) return [];
+
+    const response = await callAPI("getTasks", { familyId });
+    if (response && response.tasks) {
+      const localTasks = this.getLocalBackup("famsync_tasks", {});
+      localTasks[familyId] = response.tasks;
+      this.setLocalBackup("famsync_tasks", localTasks);
+      return response.tasks;
+    }
+
+    const localTasks = this.getLocalBackup("famsync_tasks", {});
+    return localTasks[familyId] || [];
+  },
+
+  async saveTask(familyId, task) {
+    if (!familyId) return;
+    const current = await this.getTasks(familyId);
+    const index = current.findIndex(t => t.id === task.id);
+    if (index >= 0) current[index] = task;
+    else current.push(task);
+
+    // Save local
+    const localTasks = this.getLocalBackup("famsync_tasks", {});
+    localTasks[familyId] = current;
+    this.setLocalBackup("famsync_tasks", localTasks);
+
+    // Save Vercel KV
+    await callAPI("saveTasks", { familyId, data: current });
+  },
+
+  async deleteTask(familyId, taskId) {
+    if (!familyId) return;
+    const current = await this.getTasks(familyId);
+    const updated = current.filter(t => t.id !== taskId);
+
+    // Save local
+    const localTasks = this.getLocalBackup("famsync_tasks", {});
+    localTasks[familyId] = updated;
+    this.setLocalBackup("famsync_tasks", localTasks);
+
+    // Save Vercel KV
+    await callAPI("saveTasks", { familyId, data: updated });
+  },
+
   // Cloud file uploader streaming to Vercel Blob
   async uploadDocumentFile(file) {
     if (!file) return null;
