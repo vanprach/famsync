@@ -16,6 +16,7 @@ export default function Schedule({
 }) {
   const t = translations[lang];
 
+  const [activeTab, setActiveTab] = useState("all"); // 'all', 'parents', 'kids'
   const [showAddModal, setShowAddModal] = useState(false);
   const [tempDocs, setTempDocs] = useState([]);
 

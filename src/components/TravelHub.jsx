@@ -62,6 +62,7 @@ export default function TravelHub({
   const [editHotelAddress, setEditHotelAddress] = useState("");
   const [editCheckIn, setEditCheckIn] = useState("");
   const [editCheckOut, setEditCheckOut] = useState("");
+  const [editError, setEditError] = useState("");
   // Document Upload States
   const [isUploading, setIsUploading] = useState(false);
   const [tempDocs, setTempDocs] = useState([]);
