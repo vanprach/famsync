@@ -62,10 +62,31 @@ export default function TravelHub({
   const [editHotelAddress, setEditHotelAddress] = useState("");
   const [editCheckIn, setEditCheckIn] = useState("");
   const [editCheckOut, setEditCheckOut] = useState("");
-  const [editError, setEditError] = useState("");
-
   // Document Upload States
   const [isUploading, setIsUploading] = useState(false);
+  const [tempDocs, setTempDocs] = useState([]);
+
+  const handleOpenAddModal = () => {
+    setTempDocs([]);
+    setError("");
+    setTripName("");
+    setDestination("");
+    setAirline("");
+    setFlightNumber("");
+    setDepartureDate("");
+    setArrivalDate("");
+    setBookingRef("");
+    setRetAirline("");
+    setRetFlightNumber("");
+    setRetDepartureDate("");
+    setRetArrivalDate("");
+    setRetBookingRef("");
+    setHotelName("");
+    setHotelAddress("");
+    setCheckIn("");
+    setCheckOut("");
+    setShowAddModal(true);
+  };
 
   const getActiveTrip = () => {
     return trips.find(t => t.id === selectedTripId) || null;
@@ -106,7 +127,7 @@ export default function TravelHub({
         checkIn,
         checkOut
       } : null,
-      documents: [] // Array of documents
+      documents: tempDocs // Array of documents
     };
 
     onSaveTrip(newTrip);
@@ -128,6 +149,7 @@ export default function TravelHub({
     setHotelAddress("");
     setCheckIn("");
     setCheckOut("");
+    setTempDocs([]);
     setShowAddModal(false);
     setError("");
   };
@@ -194,6 +216,87 @@ export default function TravelHub({
     onSaveTrip(updatedTrip);
     setIsEditing(false);
     setEditError("");
+  };
+
+  // Temporary document upload logic (during trip creation)
+  const handleAddTempDoc = async (file, slotType, slotTitleHebrew) => {
+    if (!file) return;
+
+    setIsUploading(true);
+    audioEngine.playSFX("click");
+    const docId = `doc-${Date.now()}`;
+    const fileName = file.name;
+
+    const fileUrl = await storageAPI.uploadDocumentFile(file);
+
+    const newDoc = {
+      id: docId,
+      title: `${slotTitleHebrew} - ${tripName.trim() || (lang === "he" ? "נסיעה חדשה" : "New Trip")}`,
+      category: "travel",
+      subType: slotType, // Store slot subType
+      memberId: family.members[0]?.id || "",
+      fileName,
+      fileUrl,
+      uploadDate: new Date().toISOString().split("T")[0]
+    };
+
+    // Save document globally
+    await onSaveDocument(newDoc);
+
+    // Save document temporarily to attach to the trip when saved
+    setTempDocs(prev => [...prev, newDoc]);
+    setIsUploading(false);
+    audioEngine.playSFX("success");
+  };
+
+  const renderAddDocSlot = (slotType, slotLabel, slotTitleHebrew) => {
+    const docs = tempDocs.filter(d => d.subType === slotType);
+
+    return (
+      <div style={{ background: "rgba(255,255,255,0.01)", border: "1px solid var(--border-glass)", borderRadius: "12px", padding: "14px", marginTop: "12px" }}>
+        <h5 style={{ fontSize: "14px", fontWeight: "750", marginBottom: "8px", color: "var(--primary)" }}>
+          📂 {slotLabel}
+        </h5>
+        
+        {docs.length > 0 ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "8px" }}>
+            {docs.map(doc => (
+              <div key={doc.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "12px", padding: "6px 10px", background: "rgba(255,255,255,0.02)", borderRadius: "8px", border: "1px solid var(--border-glass)" }}>
+                <span style={{ maxWidth: "70%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.fileName}</span>
+                <button 
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setSelectedDocPreview(doc); }} 
+                  className="inline-doc-link" 
+                  style={{ fontSize: "11px", border: "none", background: "transparent", cursor: "pointer", color: "var(--primary)", display: "flex", alignItems: "center", gap: "4px" }}
+                >
+                  <ExternalLink size={10} />
+                  {lang === "he" ? "הצג" : "View"}
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "8px", fontStyle: "italic" }}>
+            {lang === "he" ? "אין קבצים" : "No files attached"}
+          </div>
+        )}
+
+        <label className="btn-secondary" style={{ padding: "6px 12px", fontSize: "12px", cursor: "pointer", display: "inline-flex", width: "100%", justifyContent: "center", borderRadius: "8px" }}>
+          <FileUp size={12} />
+          {lang === "he" ? `העלה ${slotTitleHebrew}` : `Upload ${slotTitleHebrew}`}
+          <input 
+            type="file" 
+            accept="image/*,application/pdf" 
+            className="file-upload-input" 
+            disabled={isUploading}
+            onChange={(e) => {
+              const file = e.target.files[0];
+              if (file) handleAddTempDoc(file, slotType, slotTitleHebrew);
+            }} 
+          />
+        </label>
+      </div>
+    );
   };
 
   // Upload to slot logic
@@ -319,7 +422,7 @@ export default function TravelHub({
         </div>
 
         <button 
-          onClick={() => { audioEngine.playSFX("click"); setShowAddModal(true); }} 
+          onClick={() => { audioEngine.playSFX("click"); handleOpenAddModal(); }} 
           className="btn-primary"
         >
           <Plus size={18} />
@@ -488,6 +591,18 @@ export default function TravelHub({
                 </div>
               </div>
 
+              {/* Document upload slots during creation */}
+              <div style={{ marginTop: "20px", paddingTop: "16px", borderTop: "1px solid var(--border-glass)", marginBottom: "16px" }}>
+                <h4 style={{ fontSize: "14px", fontWeight: "700", color: "var(--text-secondary)", marginBottom: "8px" }}>
+                  📎 {lang === "he" ? "העלאת מסמכים וקבלות" : "Upload Event Documents"}
+                </h4>
+                <div>
+                  {renderAddDocSlot("passport", lang === "he" ? "צילומי דרכון" : "Passport Copies", lang === "he" ? "צילום דרכון" : "Passport Copy")}
+                  {renderAddDocSlot("ticket", lang === "he" ? "כרטיסי טיסה ו-Boarding" : "Flight Tickets & Boarding Passes", lang === "he" ? "כרטיס טיסה / Boarding" : "Flight Ticket / Boarding")}
+                  {renderAddDocSlot("hotel", lang === "he" ? "שוברי מלון" : "Hotel Vouchers", lang === "he" ? "שובר מלון" : "Hotel Voucher")}
+                </div>
+              </div>
+
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "24px" }}>
                 <button type="button" onClick={() => setShowAddModal(false)} className="btn-secondary">
                   {t.cancel}
@@ -620,6 +735,18 @@ export default function TravelHub({
                       <label>{t.checkOut}</label>
                       <input type="date" className="form-input" value={editCheckOut} onChange={(e) => setEditCheckOut(e.target.value)} />
                     </div>
+                  </div>
+                </div>
+
+                {/* Upload slots inside edit form */}
+                <div style={{ marginTop: "20px", paddingTop: "16px", borderTop: "1px solid var(--border-glass)", marginBottom: "16px" }}>
+                  <h4 style={{ fontSize: "14px", fontWeight: "700", color: "var(--text-secondary)", marginBottom: "8px" }}>
+                    📎 {lang === "he" ? "מסמכים וקבלות מצורפים" : "Attached Event Documents"}
+                  </h4>
+                  <div>
+                    {renderUploadSlot("passport", lang === "he" ? "צילומי דרכון" : "Passport Copies", lang === "he" ? "צילום דרכון" : "Passport Copy")}
+                    {renderUploadSlot("ticket", lang === "he" ? "כרטיסי טיסה ו-Boarding" : "Flight Tickets & Boarding Passes", lang === "he" ? "כרטיס טיסה / Boarding" : "Flight Ticket / Boarding")}
+                    {renderUploadSlot("hotel", lang === "he" ? "שוברי מלון" : "Hotel Vouchers", lang === "he" ? "שובר מלון" : "Hotel Voucher")}
                   </div>
                 </div>
 

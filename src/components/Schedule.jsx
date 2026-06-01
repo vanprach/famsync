@@ -16,8 +16,26 @@ export default function Schedule({
 }) {
   const t = translations[lang];
 
-  const [activeTab, setActiveTab] = useState("all"); // 'all', 'parents', 'kids'
   const [showAddModal, setShowAddModal] = useState(false);
+  const [tempDocs, setTempDocs] = useState([]);
+
+  const handleOpenAddModal = () => {
+    setTempDocs([]);
+    setError("");
+    setTitle("");
+    setDays(["Sunday"]);
+    setStartTime("08:00");
+    setEndTime("09:00");
+    setRegistrationDate("");
+    setCost("");
+    setPaymentDate("");
+    setActivityType("kid");
+    setVenue("");
+    setAddress("");
+    setRow("");
+    setSeat("");
+    setShowAddModal(true);
+  };
   
   // Detail Modal States
   const [selectedEventId, setSelectedEventId] = useState(null);
@@ -93,7 +111,7 @@ export default function Schedule({
       address: activityType === "show" ? address.trim() : "",
       row: activityType === "show" ? row.trim() : "",
       seat: activityType === "show" ? seat.trim() : "",
-      documents: [] // Attached documents
+      documents: tempDocs // Attached documents
     };
 
     onSaveSchedule(newActivity);
@@ -111,6 +129,7 @@ export default function Schedule({
     setAddress("");
     setRow("");
     setSeat("");
+    setTempDocs([]);
     setShowAddModal(false);
     setError("");
   };
@@ -162,6 +181,87 @@ export default function Schedule({
     onSaveSchedule(updatedActivity);
     setIsEditing(false);
     setEditError("");
+  };
+
+  // Temporary document upload logic (during activity creation)
+  const handleAddTempDoc = async (file, slotType, slotTitleHebrew) => {
+    if (!file) return;
+
+    setIsUploading(true);
+    audioEngine.playSFX("click");
+    const docId = `doc-${Date.now()}`;
+    const fileName = file.name;
+
+    const fileUrl = await storageAPI.uploadDocumentFile(file);
+
+    const newDoc = {
+      id: docId,
+      title: `${slotTitleHebrew} - ${title.trim() || (lang === "he" ? "חוג חדש" : "New Course")}`,
+      category: "courses",
+      subType: slotType, // Store slot subType
+      memberId: memberId,
+      fileName,
+      fileUrl,
+      uploadDate: new Date().toISOString().split("T")[0]
+    };
+
+    // Save document globally
+    await onSaveDocument(newDoc);
+
+    // Save document temporarily to attach to the activity when saved
+    setTempDocs(prev => [...prev, newDoc]);
+    setIsUploading(false);
+    audioEngine.playSFX("success");
+  };
+
+  const renderAddDocSlot = (slotType, slotLabel, slotTitleHebrew) => {
+    const docs = tempDocs.filter(d => d.subType === slotType);
+
+    return (
+      <div style={{ background: "rgba(255,255,255,0.01)", border: "1px solid var(--border-glass)", borderRadius: "12px", padding: "14px", marginTop: "12px" }}>
+        <h5 style={{ fontSize: "14px", fontWeight: "750", marginBottom: "8px", color: "var(--primary)" }}>
+          📂 {slotLabel}
+        </h5>
+        
+        {docs.length > 0 ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "8px" }}>
+            {docs.map(doc => (
+              <div key={doc.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "12px", padding: "6px 10px", background: "rgba(255,255,255,0.02)", borderRadius: "8px", border: "1px solid var(--border-glass)" }}>
+                <span style={{ maxWidth: "70%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.fileName}</span>
+                <button 
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setSelectedDocPreview(doc); }} 
+                  className="inline-doc-link" 
+                  style={{ fontSize: "11px", border: "none", background: "transparent", cursor: "pointer", color: "var(--primary)", display: "flex", alignItems: "center", gap: "4px" }}
+                >
+                  <ExternalLink size={10} />
+                  {lang === "he" ? "הצג" : "View"}
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "8px", fontStyle: "italic" }}>
+            {lang === "he" ? "אין קבצים" : "No files attached"}
+          </div>
+        )}
+
+        <label className="btn-secondary" style={{ padding: "6px 12px", fontSize: "12px", cursor: "pointer", display: "inline-flex", width: "100%", justifyContent: "center", borderRadius: "8px" }}>
+          <FileUp size={12} />
+          {lang === "he" ? `העלה ${slotTitleHebrew}` : `Upload ${slotTitleHebrew}`}
+          <input 
+            type="file" 
+            accept="image/*,application/pdf" 
+            className="file-upload-input" 
+            disabled={isUploading}
+            onChange={(e) => {
+              const file = e.target.files[0];
+              if (file) handleAddTempDoc(file, slotType, slotTitleHebrew);
+            }} 
+          />
+        </label>
+      </div>
+    );
   };
 
   // Upload to slot logic
@@ -290,7 +390,7 @@ export default function Schedule({
         </div>
 
         <button 
-          onClick={() => { audioEngine.playSFX("click"); setShowAddModal(true); }} 
+          onClick={() => { audioEngine.playSFX("click"); handleOpenAddModal(); }} 
           className="btn-primary"
         >
           <Plus size={18} />
@@ -550,6 +650,30 @@ export default function Schedule({
                 </div>
               )}
 
+              {/* Document upload slots during creation */}
+              <div style={{ marginTop: "20px", paddingTop: "16px", borderTop: "1px solid var(--border-glass)", marginBottom: "16px" }}>
+                <h4 style={{ fontSize: "14px", fontWeight: "700", color: "var(--text-secondary)", marginBottom: "8px" }}>
+                  📎 {lang === "he" ? "העלאת מסמכים וקבלות" : "Upload Event Documents"}
+                </h4>
+                {activityType === "kid" && (
+                  <div>
+                    {renderAddDocSlot("registration", lang === "he" ? "אישורי רישום" : "Registration Approval", lang === "he" ? "אישור רישום" : "Registration Approval")}
+                    {renderAddDocSlot("payment", lang === "he" ? "קבלות תשלום לחוג" : "Tuition Receipts", lang === "he" ? "קבלה" : "Receipt")}
+                  </div>
+                )}
+                {activityType === "parent" && (
+                  <div>
+                    {renderAddDocSlot("membership", lang === "he" ? "קבלות ומסמכי מנוי" : "Training/Membership Receipts", lang === "he" ? "קבלה" : "Receipt")}
+                  </div>
+                )}
+                {activityType === "show" && (
+                  <div>
+                    {renderAddDocSlot("ticket", lang === "he" ? "כרטיסי כניסה אלקטרוניים" : "Admission Tickets", lang === "he" ? "כרטיס כניסה" : "Admission Ticket")}
+                    {renderAddDocSlot("receipt", lang === "he" ? "קבלות ורכישות" : "Receipts & Invoices", lang === "he" ? "קבלה" : "Receipt")}
+                  </div>
+                )}
+              </div>
+
               {/* Actions */}
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "24px" }}>
                 <button 
@@ -741,6 +865,30 @@ export default function Schedule({
                     </div>
                   </div>
                 )}
+
+                {/* Upload slots inside edit form */}
+                <div style={{ marginTop: "20px", paddingTop: "16px", borderTop: "1px solid var(--border-glass)", marginBottom: "16px" }}>
+                  <h4 style={{ fontSize: "14px", fontWeight: "700", color: "var(--text-secondary)", marginBottom: "8px" }}>
+                    📎 {lang === "he" ? "מסמכים וקבלות מצורפים" : "Attached Event Documents"}
+                  </h4>
+                  {editActivityType === "kid" && (
+                    <div>
+                      {renderUploadSlot("registration", lang === "he" ? "אישורי רישום" : "Registration Approval", lang === "he" ? "אישור רישום" : "Registration Approval")}
+                      {renderUploadSlot("payment", lang === "he" ? "קבלות תשלום לחוג" : "Tuition Receipts", lang === "he" ? "קבלה" : "Receipt")}
+                    </div>
+                  )}
+                  {editActivityType === "parent" && (
+                    <div>
+                      {renderUploadSlot("membership", lang === "he" ? "קבלות ומסמכי מנוי" : "Training/Membership Receipts", lang === "he" ? "קבלה" : "Receipt")}
+                    </div>
+                  )}
+                  {editActivityType === "show" && (
+                    <div>
+                      {renderUploadSlot("ticket", lang === "he" ? "כרטיסי כניסה אלקטרוניים" : "Admission Tickets", lang === "he" ? "כרטיס כניסה" : "Admission Ticket")}
+                      {renderUploadSlot("receipt", lang === "he" ? "קבלות ורכישות" : "Receipts & Invoices", lang === "he" ? "קבלה" : "Receipt")}
+                    </div>
+                  )}
+                </div>
 
                 <div style={{ display: "flex", gap: "10px", marginTop: "20px" }}>
                   <button type="button" onClick={() => setIsEditing(false)} className="btn-secondary" style={{ flex: 1 }}>
