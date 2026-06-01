@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from "react";
-import { LayoutDashboard, Calendar, Plane, FolderLock, Settings as SettingsIcon, LogOut } from "lucide-react";
+import { LayoutDashboard, Calendar, Plane, Settings as SettingsIcon, LogOut, Volume2, VolumeX, Music } from "lucide-react";
 import Login from "./components/Login";
 import Onboarding from "./components/Onboarding";
 import Dashboard from "./components/Dashboard";
 import Schedule from "./components/Schedule";
 import TravelHub from "./components/TravelHub";
-import DocumentVault from "./components/DocumentVault";
 import Settings from "./components/Settings";
 import { storageAPI } from "./utils/storage";
 import { translations } from "./utils/translations";
+import { audioEngine } from "./utils/audio";
 
 export default function App() {
   // Application Language: default is Hebrew ('he'), alternate is English ('en')
@@ -28,6 +28,34 @@ export default function App() {
 
   // App Routing Tab state
   const [activeTab, setActiveTab] = useState("dashboard");
+
+  // Audio States
+  const [ambientPlaying, setAmbientPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+
+  const handleTabChange = (tab) => {
+    audioEngine.playSFX("click");
+    setActiveTab(tab);
+  };
+
+  const handleToggleAmbient = () => {
+    audioEngine.playSFX("click");
+    if (ambientPlaying) {
+      audioEngine.stopAmbient();
+      setAmbientPlaying(false);
+    } else {
+      audioEngine.startAmbient();
+      setAmbientPlaying(true);
+    }
+  };
+
+  const handleToggleMute = () => {
+    const muted = audioEngine.toggleMute();
+    setIsMuted(muted);
+    if (!muted) {
+      audioEngine.playSFX("click");
+    }
+  };
 
   // Core Data States
   const [schedules, setSchedules] = useState(() => {
@@ -114,6 +142,7 @@ export default function App() {
 
   // Auth Callback
   const handleLoginSuccess = async (user) => {
+    audioEngine.playSFX("success");
     setCurrentUser(user);
     if (user.familyId) {
       const activeFamily = await storageAPI.getFamily(user.familyId);
@@ -134,6 +163,7 @@ export default function App() {
   };
 
   const handleOnboardingSuccess = async (user) => {
+    audioEngine.playSFX("success");
     setCurrentUser(user);
     if (user.familyId) {
       const activeFamily = await storageAPI.getFamily(user.familyId);
@@ -149,6 +179,7 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    audioEngine.playSFX("delete");
     storageAPI.logout();
     setCurrentUser(null);
     setFamily(null);
@@ -161,6 +192,7 @@ export default function App() {
   // State Updates
   const handleSaveSchedule = async (item) => {
     if (!family) return;
+    audioEngine.playSFX("success");
     await storageAPI.saveScheduleItem(family.id, item);
     const sch = await storageAPI.getSchedules(family.id);
     setSchedules(sch);
@@ -168,6 +200,7 @@ export default function App() {
 
   const handleDeleteSchedule = async (itemId) => {
     if (!family) return;
+    audioEngine.playSFX("delete");
     await storageAPI.deleteScheduleItem(family.id, itemId);
     const sch = await storageAPI.getSchedules(family.id);
     setSchedules(sch);
@@ -175,6 +208,7 @@ export default function App() {
 
   const handleSaveTrip = async (trip) => {
     if (!family) return;
+    audioEngine.playSFX("success");
     await storageAPI.saveTrip(family.id, trip);
     const tr = await storageAPI.getTrips(family.id);
     setTrips(tr);
@@ -182,6 +216,7 @@ export default function App() {
 
   const handleDeleteTrip = async (tripId) => {
     if (!family) return;
+    audioEngine.playSFX("delete");
     await storageAPI.deleteTrip(family.id, tripId);
     const tr = await storageAPI.getTrips(family.id);
     setTrips(tr);
@@ -189,6 +224,7 @@ export default function App() {
 
   const handleSaveDocument = async (doc) => {
     if (!family) return;
+    audioEngine.playSFX("success");
     await storageAPI.saveDocument(family.id, doc);
     const docList = await storageAPI.getDocuments(family.id);
     setDocuments(docList);
@@ -196,12 +232,14 @@ export default function App() {
 
   const handleDeleteDocument = async (docId) => {
     if (!family) return;
+    audioEngine.playSFX("delete");
     await storageAPI.deleteDocument(family.id, docId);
     const docList = await storageAPI.getDocuments(family.id);
     setDocuments(docList);
   };
 
   const handleSaveFamily = async (updatedFamily) => {
+    audioEngine.playSFX("success");
     await storageAPI.saveFamily(updatedFamily);
     setFamily(updatedFamily);
   };
@@ -243,31 +281,25 @@ export default function App() {
 
         <ul className="nav-links">
           <li className={`nav-item ${activeTab === "dashboard" ? "active" : ""}`}>
-            <button onClick={() => setActiveTab("dashboard")}>
+            <button onClick={() => handleTabChange("dashboard")}>
               <LayoutDashboard />
               {t.dashboardTab}
             </button>
           </li>
           <li className={`nav-item ${activeTab === "schedule" ? "active" : ""}`}>
-            <button onClick={() => setActiveTab("schedule")}>
+            <button onClick={() => handleTabChange("schedule")}>
               <Calendar />
               {t.scheduleTab}
             </button>
           </li>
           <li className={`nav-item ${activeTab === "travel" ? "active" : ""}`}>
-            <button onClick={() => setActiveTab("travel")}>
+            <button onClick={() => handleTabChange("travel")}>
               <Plane />
               {t.travelTab}
             </button>
           </li>
-          <li className={`nav-item ${activeTab === "vault" ? "active" : ""}`}>
-            <button onClick={() => setActiveTab("vault")}>
-              <FolderLock />
-              {t.documentsTab}
-            </button>
-          </li>
           <li className={`nav-item ${activeTab === "settings" ? "active" : ""}`}>
-            <button onClick={() => setActiveTab("settings")}>
+            <button onClick={() => handleTabChange("settings")}>
               <SettingsIcon />
               {t.settingsTab}
             </button>
@@ -301,35 +333,28 @@ export default function App() {
       {/* Mobile Navigation Bottom Bar */}
       <nav className="mobile-nav">
         <button 
-          onClick={() => setActiveTab("dashboard")} 
+          onClick={() => handleTabChange("dashboard")} 
           className={`mobile-nav-item ${activeTab === "dashboard" ? "active" : ""}`}
         >
           <LayoutDashboard />
           <span>{t.dashboardTab}</span>
         </button>
         <button 
-          onClick={() => setActiveTab("schedule")} 
+          onClick={() => handleTabChange("schedule")} 
           className={`mobile-nav-item ${activeTab === "schedule" ? "active" : ""}`}
         >
           <Calendar />
           <span>{t.scheduleTab}</span>
         </button>
         <button 
-          onClick={() => setActiveTab("travel")} 
+          onClick={() => handleTabChange("travel")} 
           className={`mobile-nav-item ${activeTab === "travel" ? "active" : ""}`}
         >
           <Plane />
           <span>{t.travelTab}</span>
         </button>
         <button 
-          onClick={() => setActiveTab("vault")} 
-          className={`mobile-nav-item ${activeTab === "vault" ? "active" : ""}`}
-        >
-          <FolderLock />
-          <span>{t.documentsTab}</span>
-        </button>
-        <button 
-          onClick={() => setActiveTab("settings")} 
+          onClick={() => handleTabChange("settings")} 
           className={`mobile-nav-item ${activeTab === "settings" ? "active" : ""}`}
         >
           <SettingsIcon />
@@ -346,9 +371,9 @@ export default function App() {
             family={family} 
             schedules={schedules} 
             trips={trips} 
-            onNavigate={setActiveTab}
+            onNavigate={handleTabChange}
             lang={lang}
-            onQuickUploadDoc={() => setActiveTab("vault")}
+            onQuickUploadDoc={() => handleTabChange("schedule")}
           />
         )}
 
@@ -358,6 +383,7 @@ export default function App() {
             schedules={schedules} 
             onSaveSchedule={handleSaveSchedule} 
             onDeleteSchedule={handleDeleteSchedule}
+            onSaveDocument={handleSaveDocument}
             lang={lang}
           />
         )}
@@ -374,16 +400,6 @@ export default function App() {
           />
         )}
 
-        {activeTab === "vault" && (
-          <DocumentVault 
-            family={family} 
-            documents={documents} 
-            onSaveDocument={handleSaveDocument} 
-            onDeleteDocument={handleDeleteDocument}
-            lang={lang}
-          />
-        )}
-
         {activeTab === "settings" && (
           <Settings 
             family={family} 
@@ -395,6 +411,31 @@ export default function App() {
         )}
 
       </main>
+
+      {/* Floating Audio Controller */}
+      <div className="audio-controller-floating">
+        <button 
+          onClick={handleToggleMute} 
+          className={`audio-btn ${isMuted ? "muted" : ""}`}
+          title={isMuted ? (lang === "he" ? "בטל השתקה" : "Unmute Effects") : (lang === "he" ? "השתק אפקטים" : "Mute Effects")}
+        >
+          {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+        </button>
+        <button 
+          onClick={handleToggleAmbient} 
+          className={`audio-btn ambient-btn ${ambientPlaying ? "playing" : ""}`}
+          title={ambientPlaying ? (lang === "he" ? "עצור מוזיקת רקע" : "Stop Background Music") : (lang === "he" ? "הפעל מוזיקת רקע" : "Play Background Music")}
+        >
+          <Music size={16} className={ambientPlaying ? "spinning" : ""} />
+          {ambientPlaying && (
+            <div className="sound-wave-waves">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+          )}
+        </button>
+      </div>
 
     </div>
   );

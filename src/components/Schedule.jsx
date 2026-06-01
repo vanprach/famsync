@@ -1,25 +1,64 @@
 import React, { useState } from "react";
-import { Plus, Trash, Calendar, Clock, User } from "lucide-react";
+import { Plus, Trash, Calendar, Clock, User, Paperclip, FileUp, ExternalLink, Edit, Check, X } from "lucide-react";
 import { translations } from "../utils/translations";
+import { storageAPI, MOCK_RECEIPT_URL } from "../utils/storage";
+import { audioEngine } from "../utils/audio";
 
 const DAYS_OF_WEEK = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-export default function Schedule({ family, schedules, onSaveSchedule, onDeleteSchedule, lang }) {
+export default function Schedule({ 
+  family, 
+  schedules, 
+  onSaveSchedule, 
+  onDeleteSchedule, 
+  onSaveDocument, 
+  lang 
+}) {
   const t = translations[lang];
 
   const [activeTab, setActiveTab] = useState("all"); // 'all', 'parents', 'kids'
   const [showAddModal, setShowAddModal] = useState(false);
   
-  // Form State
+  // Detail Modal States
+  const [selectedEventId, setSelectedEventId] = useState(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [selectedDocPreview, setSelectedDocPreview] = useState(null);
+
+  // Form State (New Event)
   const [title, setTitle] = useState("");
   const [memberId, setMemberId] = useState(family.members[0]?.id || "");
-  const [day, setDay] = useState("Sunday");
+  const [days, setDays] = useState(["Sunday"]);
   const [startTime, setStartTime] = useState("08:00");
   const [endTime, setEndTime] = useState("09:00");
+  const [registrationDate, setRegistrationDate] = useState("");
+  const [cost, setCost] = useState("");
+  const [paymentDate, setPaymentDate] = useState("");
   const [error, setError] = useState("");
+
+  // Edit Event State
+  const [editTitle, setEditTitle] = useState("");
+  const [editMemberId, setEditMemberId] = useState("");
+  const [editDays, setEditDays] = useState([]);
+  const [editStartTime, setEditStartTime] = useState("");
+  const [editEndTime, setEditEndTime] = useState("");
+  const [editRegistrationDate, setEditRegistrationDate] = useState("");
+  const [editCost, setEditCost] = useState("");
+  const [editPaymentDate, setEditPaymentDate] = useState("");
+  const [editError, setEditError] = useState("");
+
+  // Inline Document Upload State
+  const [docTitle, setDocTitle] = useState("");
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [uploadedFileName, setUploadedFileName] = useState("");
+  const [uploadError, setUploadError] = useState("");
+  const [isUploading, setIsUploading] = useState(false);
 
   const getMember = (id) => {
     return family.members.find(m => m.id === id) || {};
+  };
+
+  const getActiveEvent = () => {
+    return schedules.find(s => s.id === selectedEventId) || null;
   };
 
   const handleSave = (e) => {
@@ -34,19 +73,135 @@ export default function Schedule({ family, schedules, onSaveSchedule, onDeleteSc
       id: `sch-${Date.now()}`,
       title: title.trim(),
       memberId,
-      day,
+      days, // Store array of days for recurrence
       startTime,
       endTime,
       isRecurring: true,
-      type: member.role // 'parent' or 'kid'
+      type: member.role, // 'parent' or 'kid'
+      registrationDate,
+      cost: cost ? parseFloat(cost) : "",
+      paymentDate,
+      documents: [] // Attached documents
     };
 
     onSaveSchedule(newActivity);
     
     // Reset Form
     setTitle("");
+    setDays(["Sunday"]);
+    setStartTime("08:00");
+    setEndTime("09:00");
+    setRegistrationDate("");
+    setCost("");
+    setPaymentDate("");
     setShowAddModal(false);
     setError("");
+  };
+
+  const handleStartEdit = (event) => {
+    audioEngine.playSFX("click");
+    setEditTitle(event.title);
+    setEditMemberId(event.memberId);
+    setEditDays(event.days || [event.day] || []);
+    setEditStartTime(event.startTime);
+    setEditEndTime(event.endTime);
+    setEditRegistrationDate(event.registrationDate || "");
+    setEditCost(event.cost || "");
+    setEditPaymentDate(event.paymentDate || "");
+    setIsEditing(true);
+  };
+
+  const handleSaveEdit = (e) => {
+    e.preventDefault();
+    if (!editTitle.trim()) {
+      setEditError(t.requiredField);
+      return;
+    }
+
+    const activeEvent = getActiveEvent();
+    const member = getMember(editMemberId);
+    
+    const updatedActivity = {
+      ...activeEvent,
+      title: editTitle.trim(),
+      memberId: editMemberId,
+      days: editDays,
+      startTime: editStartTime,
+      endTime: editEndTime,
+      type: member.role,
+      registrationDate: editRegistrationDate,
+      cost: editCost ? parseFloat(editCost) : "",
+      paymentDate: editPaymentDate
+    };
+
+    onSaveSchedule(updatedActivity);
+    setIsEditing(false);
+    setEditError("");
+  };
+
+  // Inline Document Upload logic
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setSelectedFile(file);
+    setUploadedFileName(file.name);
+    if (!docTitle) {
+      setDocTitle(file.name.split(".")[0]);
+    }
+  };
+
+  const handleSaveDocument = async (e) => {
+    e.preventDefault();
+    if (!docTitle.trim()) {
+      setUploadError(t.requiredField);
+      return;
+    }
+
+    const activeEvent = getActiveEvent();
+    if (!activeEvent) return;
+
+    setIsUploading(true);
+    const docId = `doc-${Date.now()}`;
+    const fileName = uploadedFileName || "receipt.png";
+
+    let fileUrl = MOCK_RECEIPT_URL;
+    if (selectedFile) {
+      fileUrl = await storageAPI.uploadDocumentFile(selectedFile);
+    }
+
+    const newDoc = {
+      id: docId,
+      title: docTitle.trim(),
+      category: "courses",
+      memberId: activeEvent.memberId,
+      fileName,
+      fileUrl,
+      uploadDate: new Date().toISOString().split("T")[0]
+    };
+
+    // Save document globally
+    await onSaveDocument(newDoc);
+
+    // Link document directly inside schedule item
+    const updatedActivity = {
+      ...activeEvent,
+      documents: [...(activeEvent.documents || []), newDoc]
+    };
+
+    await onSaveSchedule(updatedActivity);
+
+    // Reset Upload fields
+    setDocTitle("");
+    setSelectedFile(null);
+    setUploadedFileName("");
+    setUploadError("");
+    setIsUploading(false);
+  };
+
+  const handleOpenDetails = (event) => {
+    audioEngine.playSFX("click");
+    setSelectedEventId(event.id);
+    setIsEditing(false);
   };
 
   // Filter schedules based on tabs
@@ -56,12 +211,18 @@ export default function Schedule({ family, schedules, onSaveSchedule, onDeleteSc
     return true;
   });
 
-  // Check if a day has any events in the filtered list
   const getDayEvents = (dayName) => {
     return filteredSchedules
-      .filter(sch => sch.day === dayName)
+      .filter(sch => {
+        if (sch.days && Array.isArray(sch.days)) {
+          return sch.days.includes(dayName);
+        }
+        return sch.day === dayName; // backward compatibility
+      })
       .sort((a, b) => a.startTime.localeCompare(b.startTime));
   };
+
+  const activeEvent = getActiveEvent();
 
   return (
     <div>
@@ -74,7 +235,7 @@ export default function Schedule({ family, schedules, onSaveSchedule, onDeleteSc
         </div>
 
         <button 
-          onClick={() => setShowAddModal(true)} 
+          onClick={() => { audioEngine.playSFX("click"); setShowAddModal(true); }} 
           className="btn-primary"
         >
           <Plus size={18} />
@@ -85,19 +246,19 @@ export default function Schedule({ family, schedules, onSaveSchedule, onDeleteSc
       {/* Tabs */}
       <div className="schedule-tabs">
         <button 
-          onClick={() => setActiveTab("all")} 
+          onClick={() => { audioEngine.playSFX("click"); setActiveTab("all"); }} 
           className={`schedule-tab ${activeTab === "all" ? "active" : ""}`}
         >
           {t.allMembers}
         </button>
         <button 
-          onClick={() => setActiveTab("parents")} 
+          onClick={() => { audioEngine.playSFX("click"); setActiveTab("parents"); }} 
           className={`schedule-tab ${activeTab === "parents" ? "active" : ""}`}
         >
           {t.parentsCourses}
         </button>
         <button 
-          onClick={() => setActiveTab("kids")} 
+          onClick={() => { audioEngine.playSFX("click"); setActiveTab("kids"); }} 
           className={`schedule-tab ${activeTab === "kids" ? "active" : ""}`}
         >
           {t.kidsCourses}
@@ -128,24 +289,18 @@ export default function Schedule({ family, schedules, onSaveSchedule, onDeleteSc
                     return (
                       <div 
                         key={event.id} 
+                        onClick={() => handleOpenDetails(event)}
                         className="calendar-event"
                         style={{ 
                           borderInlineStartColor: member.color || "var(--primary)",
-                          background: `rgba(${parseInt((member.color || "#8b5cf6").substring(1,3), 16)}, ${parseInt((member.color || "#8b5cf6").substring(3,5), 16)}, ${parseInt((member.color || "#8b5cf6").substring(5,7), 16)}, 0.08)`
+                          background: `rgba(${parseInt((member.color || "#8b5cf6").substring(1,3), 16)}, ${parseInt((member.color || "#8b5cf6").substring(3,5), 16)}, ${parseInt((member.color || "#8b5cf6").substring(5,7), 16)}, 0.08)`,
+                          cursor: "pointer"
                         }}
                       >
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "4px" }}>
                           <span className="calendar-event-title" style={{ color: member.color, fontWeight: "700" }}>
                             {event.title}
                           </span>
-                          
-                          <button 
-                            onClick={() => onDeleteSchedule(event.id)}
-                            style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer" }}
-                            title={t.deleteBtn}
-                          >
-                            <Trash size={10} />
-                          </button>
                         </div>
                         
                         <div className="calendar-event-time">
@@ -170,15 +325,10 @@ export default function Schedule({ family, schedules, onSaveSchedule, onDeleteSc
         })}
       </div>
 
-      {/* Schedule List breakdown for mobile view fallback, rendering clear tasks list */}
-      <div className="glass-panel" style={{ padding: "20px", display: "none" /* Handled responsively or optional */ }}>
-        {/* Hidden on desktop, but shown in standard layout for responsiveness */}
-      </div>
-
       {/* Add Course Modal */}
       {showAddModal && (
-        <div className="modal-overlay">
-          <div className="modal-content glass-panel">
+        <div className="modal-overlay" onClick={() => setShowAddModal(false)}>
+          <div className="modal-content glass-panel" style={{ maxWidth: "550px" }} onClick={(e) => e.stopPropagation()}>
             <h3 style={{ fontSize: "20px", marginBottom: "20px", display: "flex", alignItems: "center", gap: "8px" }}>
               <Calendar size={20} color="var(--primary)" />
               {t.addActivity}
@@ -193,7 +343,7 @@ export default function Schedule({ family, schedules, onSaveSchedule, onDeleteSc
                   className="form-input"
                   value={title}
                   onChange={(e) => { setTitle(e.target.value); setError(""); }}
-                  placeholder={lang === "he" ? "למשל: יוגה, שחייה" : "e.g. Yoga, Swimming"}
+                  placeholder={lang === "he" ? "למשל: שיעור גיטרה, אימון כושר" : "e.g. Guitar Lesson, Workout"}
                 />
                 {error && <span style={{ color: "var(--danger)", fontSize: "12px" }}>{error}</span>}
               </div>
@@ -214,20 +364,27 @@ export default function Schedule({ family, schedules, onSaveSchedule, onDeleteSc
                 </select>
               </div>
 
-              {/* Select Day */}
+              {/* Select Days (Checkbox Group) */}
               <div className="form-group">
                 <label>{t.selectDay}</label>
-                <select 
-                  className="form-select"
-                  value={day}
-                  onChange={(e) => setDay(e.target.value)}
-                >
+                <div className="days-checkbox-group">
                   {DAYS_OF_WEEK.map(d => (
-                    <option key={d} value={d}>
-                      {t.days[d]}
-                    </option>
+                    <label key={d} className="day-checkbox-label">
+                      <input 
+                        type="checkbox"
+                        checked={days.includes(d)}
+                        onChange={() => {
+                          if (days.includes(d)) {
+                            if (days.length > 1) setDays(days.filter(x => x !== d));
+                          } else {
+                            setDays([...days, d]);
+                          }
+                        }}
+                      />
+                      {t.daysShort[d]}
+                    </label>
                   ))}
-                </select>
+                </div>
               </div>
 
               {/* Times Row */}
@@ -252,6 +409,45 @@ export default function Schedule({ family, schedules, onSaveSchedule, onDeleteSc
                 </div>
               </div>
 
+              {/* Dynamic Goal-Oriented Fields */}
+              <div style={{ background: "rgba(255,255,255,0.01)", border: "1px solid var(--border-glass)", borderRadius: "12px", padding: "16px", marginBottom: "16px" }}>
+                <h4 style={{ fontSize: "14px", fontWeight: "bold", marginBottom: "12px" }}>
+                  {lang === "he" ? "פרטי רישום ותשלום (אופציונלי)" : "Registration & Cost details (Optional)"}
+                </h4>
+                
+                <div className="form-group">
+                  <label>{lang === "he" ? "תאריך רישום" : "Registration Date"}</label>
+                  <input 
+                    type="date" 
+                    className="form-input" 
+                    value={registrationDate} 
+                    onChange={(e) => setRegistrationDate(e.target.value)} 
+                  />
+                </div>
+                
+                <div className="grid-cols-2" style={{ marginBottom: 0 }}>
+                  <div className="form-group">
+                    <label>{lang === "he" ? "סכום ששולם" : "Paid Amount"}</label>
+                    <input 
+                      type="number" 
+                      className="form-input" 
+                      value={cost} 
+                      onChange={(e) => setCost(e.target.value)} 
+                      placeholder="₪"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>{lang === "he" ? "תאריך תשלום" : "Payment Date"}</label>
+                    <input 
+                      type="date" 
+                      className="form-input" 
+                      value={paymentDate} 
+                      onChange={(e) => setPaymentDate(e.target.value)} 
+                    />
+                  </div>
+                </div>
+              </div>
+
               {/* Actions */}
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "24px" }}>
                 <button 
@@ -269,6 +465,375 @@ export default function Schedule({ family, schedules, onSaveSchedule, onDeleteSc
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Dynamic Event Details Smart Modal */}
+      {activeEvent && (
+        <div className="modal-overlay" onClick={() => setSelectedEventId(null)}>
+          <div className="modal-content glass-panel" style={{ maxWidth: "550px" }} onClick={(e) => e.stopPropagation()}>
+            
+            {/* Modal Header */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "20px" }}>
+              <div>
+                <span className={`smart-badge ${activeEvent.type}`}>
+                  {activeEvent.type === "parent" 
+                    ? (lang === "he" ? "אירוע מבוגרים" : "Adults Course") 
+                    : (lang === "he" ? "אירוע ילדים" : "Kids Course")}
+                </span>
+                <h3 style={{ fontSize: "22px", fontWeight: "800", marginTop: "8px" }}>{activeEvent.title}</h3>
+              </div>
+              <button 
+                onClick={() => setSelectedEventId(null)}
+                style={{ background: "transparent", border: "none", color: "var(--text-secondary)", cursor: "pointer", fontSize: "20px" }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {isEditing ? (
+              // EDIT FORM inside Details Modal
+              <form onSubmit={handleSaveEdit}>
+                <div className="form-group">
+                  <label>{t.activityName}</label>
+                  <input 
+                    type="text" 
+                    className="form-input" 
+                    value={editTitle}
+                    onChange={(e) => { setEditTitle(e.target.value); setEditError(""); }}
+                  />
+                  {editError && <span style={{ color: "var(--danger)", fontSize: "12px" }}>{editError}</span>}
+                </div>
+
+                <div className="form-group">
+                  <label>{t.selectMember}</label>
+                  <select 
+                    className="form-select"
+                    value={editMemberId}
+                    onChange={(e) => setEditMemberId(e.target.value)}
+                  >
+                    {family.members.map(m => (
+                      <option key={m.id} value={m.id}>
+                        {m.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label>{t.selectDay}</label>
+                  <div className="days-checkbox-group">
+                    {DAYS_OF_WEEK.map(d => (
+                      <label key={d} className="day-checkbox-label">
+                        <input 
+                          type="checkbox"
+                          checked={editDays.includes(d)}
+                          onChange={() => {
+                            if (editDays.includes(d)) {
+                              if (editDays.length > 1) setEditDays(editDays.filter(x => x !== d));
+                            } else {
+                              setEditDays([...editDays, d]);
+                            }
+                          }}
+                        />
+                        {t.daysShort[d]}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid-cols-2">
+                  <div className="form-group">
+                    <label>{t.startTime}</label>
+                    <input 
+                      type="time" 
+                      className="form-input" 
+                      value={editStartTime}
+                      onChange={(e) => setEditStartTime(e.target.value)}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>{t.endTime}</label>
+                    <input 
+                      type="time" 
+                      className="form-input" 
+                      value={editEndTime}
+                      onChange={(e) => setEditEndTime(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ background: "rgba(255,255,255,0.01)", border: "1px solid var(--border-glass)", borderRadius: "12px", padding: "16px", marginBottom: "16px" }}>
+                  <div className="form-group">
+                    <label>{lang === "he" ? "תאריך רישום" : "Registration Date"}</label>
+                    <input 
+                      type="date" 
+                      className="form-input" 
+                      value={editRegistrationDate}
+                      onChange={(e) => setEditRegistrationDate(e.target.value)}
+                    />
+                  </div>
+                  <div className="grid-cols-2" style={{ marginBottom: 0 }}>
+                    <div className="form-group">
+                      <label>{lang === "he" ? "סכום ששולם" : "Paid Amount"}</label>
+                      <input 
+                        type="number" 
+                        className="form-input" 
+                        value={editCost}
+                        onChange={(e) => setEditCost(e.target.value)}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>{lang === "he" ? "תאריך תשלום" : "Payment Date"}</label>
+                      <input 
+                        type="date" 
+                        className="form-input" 
+                        value={editPaymentDate}
+                        onChange={(e) => setEditPaymentDate(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: "10px", marginTop: "20px" }}>
+                  <button type="button" onClick={() => setIsEditing(false)} className="btn-secondary" style={{ flex: 1 }}>
+                    {t.cancel}
+                  </button>
+                  <button type="submit" className="btn-primary" style={{ flex: 1 }}>
+                    <Check size={16} />
+                    {t.save}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              // SMART DETAIL LAYOUT (Goal-oriented)
+              <div>
+                
+                {/* Member Info */}
+                <div style={{ display: "flex", alignItems: "center", gap: "12px", paddingBottom: "16px", borderBottom: "1px solid var(--border-glass)" }}>
+                  <img 
+                    src={getMember(activeEvent.memberId).avatar} 
+                    style={{ width: "40px", height: "40px", borderRadius: "50%", objectFit: "cover", border: `2px solid ${getMember(activeEvent.memberId).color}` }} 
+                    alt={getMember(activeEvent.memberId).name} 
+                  />
+                  <div>
+                    <div style={{ fontWeight: "700" }}>{getMember(activeEvent.memberId).name}</div>
+                    <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+                      {getMember(activeEvent.memberId).role === "parent" ? t.roleParent : t.roleKid}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Details Section */}
+                <div style={{ margin: "20px 0", display: "flex", flexDirection: "column", gap: "12px" }}>
+                  
+                  {/* Common Details */}
+                  <div style={{ display: "flex", gap: "8px", fontSize: "14px" }}>
+                    <Clock size={16} color="var(--primary)" />
+                    <div>
+                      <strong>{lang === "he" ? "לוח זמנים:" : "Schedule:"}</strong>{" "}
+                      {activeEvent.startTime} - {activeEvent.endTime} |{" "}
+                      {activeEvent.days ? activeEvent.days.map(d => t.days[d]).join(", ") : t.days[activeEvent.day]}
+                    </div>
+                  </div>
+
+                  {/* Dynamic Fields: Kid's Course details */}
+                  {activeEvent.type === "kid" && (
+                    <div style={{ padding: "16px", borderRadius: "12px", background: "rgba(16, 185, 129, 0.05)", border: "1px solid rgba(16, 185, 129, 0.15)", display: "flex", flexDirection: "column", gap: "8px", fontSize: "14px" }}>
+                      <h4 style={{ fontWeight: "700", color: "var(--success)" }}>👦 {lang === "he" ? "מעקב חוגי ילדים" : "Kids Course Tracking"}</h4>
+                      
+                      {activeEvent.registrationDate && (
+                        <div>
+                          <strong>{lang === "he" ? "תאריך רישום לחוג:" : "Registration Date:"}</strong> {activeEvent.registrationDate}
+                        </div>
+                      )}
+                      
+                      {activeEvent.cost && (
+                        <div>
+                          <strong>{lang === "he" ? "עלות החוג ששולמה:" : "Course Tuition Paid:"}</strong> ₪{activeEvent.cost}
+                          {activeEvent.paymentDate && ` (${lang === "he" ? "שולם בתאריך" : "paid on"} ${activeEvent.paymentDate})`}
+                        </div>
+                      )}
+                      
+                      {(!activeEvent.registrationDate && !activeEvent.cost) && (
+                        <div style={{ fontSize: "12px", color: "var(--text-muted)", fontStyle: "italic" }}>
+                          {lang === "he" ? "אין מידע פיננסי מעודכן לחוג זה. לחץ 'ערוך' להזנת פרטים." : "No financial details logged. Click 'Edit' to add details."}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Dynamic Fields: Adult's Course details */}
+                  {activeEvent.type === "parent" && (
+                    <div style={{ padding: "16px", borderRadius: "12px", background: "rgba(139, 92, 246, 0.05)", border: "1px solid rgba(139, 92, 246, 0.15)", display: "flex", flexDirection: "column", gap: "8px", fontSize: "14px" }}>
+                      <h4 style={{ fontWeight: "700", color: "var(--primary)" }}>🧘 {lang === "he" ? "לו\"ז ומעקב הורים" : "Adult Course & Fitness Tracking"}</h4>
+                      
+                      {activeEvent.registrationDate && (
+                        <div>
+                          <strong>{lang === "he" ? "תאריך הצטרפות:" : "Date Joined:"}</strong> {activeEvent.registrationDate}
+                        </div>
+                      )}
+
+                      {activeEvent.cost && (
+                        <div>
+                          <strong>{lang === "he" ? "עלות מנוי/אימון:" : "Membership Cost:"}</strong> ₪{activeEvent.cost}
+                          {activeEvent.paymentDate && ` (${lang === "he" ? "שולם בתאריך" : "paid on"} ${activeEvent.paymentDate})`}
+                        </div>
+                      )}
+
+                      {(!activeEvent.registrationDate && !activeEvent.cost) && (
+                        <div style={{ fontSize: "12px", color: "var(--text-muted)", fontStyle: "italic" }}>
+                          {lang === "he" ? "אין מידע פיננסי מעודכן לאימון זה. לחץ 'ערוך' להזנת פרטים." : "No membership details logged. Click 'Edit' to add details."}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                </div>
+
+                {/* Inline Documents list & Uploader */}
+                <div style={{ marginTop: "20px", paddingTop: "16px", borderTop: "1px solid var(--border-glass)" }}>
+                  <h4 style={{ fontSize: "14px", fontWeight: "700", color: "var(--text-secondary)", marginBottom: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
+                    <Paperclip size={14} />
+                    {t.documentsAttached} ({(activeEvent.documents && activeEvent.documents.length) || 0})
+                  </h4>
+
+                  {/* Render inline documents */}
+                  <div className="inline-docs-container">
+                    {activeEvent.documents && activeEvent.documents.map(doc => (
+                      <div key={doc.id} className="inline-doc-item">
+                        <span style={{ fontWeight: "600" }}>{doc.title}</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                          <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>({doc.fileName})</span>
+                          <button 
+                            onClick={() => setSelectedDocPreview(doc)} 
+                            className="inline-doc-link"
+                          >
+                            <ExternalLink size={12} />
+                            {lang === "he" ? "הצג" : "View"}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    {(!activeEvent.documents || activeEvent.documents.length === 0) && (
+                      <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                        {lang === "he" ? "אין מסמכים מצורפים לאירוע זה" : "No documents attached to this event"}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Inline file upload form */}
+                  <form onSubmit={handleSaveDocument} style={{ marginTop: "16px", padding: "12px", background: "rgba(255,255,255,0.01)", border: "1px dashed var(--border-glass)", borderRadius: "8px" }}>
+                    <h5 style={{ fontSize: "13px", fontWeight: "700", marginBottom: "8px" }}>
+                      {lang === "he" ? "העלאת קבלה / מסמך לאירוע" : "Attach a receipt/document to this event"}
+                    </h5>
+                    
+                    <div className="grid-cols-2" style={{ gap: "8px", marginBottom: "10px" }}>
+                      <input 
+                        type="text" 
+                        placeholder={lang === "he" ? "כותרת (למשל: קבלה לחוג)" : "Title (e.g. Receipt)"}
+                        className="form-input" 
+                        style={{ padding: "8px 12px", fontSize: "13px" }}
+                        value={docTitle}
+                        onChange={(e) => { setDocTitle(e.target.value); setUploadError(""); }}
+                      />
+                      
+                      <label className="btn-secondary" style={{ padding: "8px 12px", fontSize: "13px", cursor: "pointer", display: "inline-flex" }}>
+                        <FileUp size={12} />
+                        {uploadedFileName ? (uploadedFileName.slice(0, 10) + "...") : (lang === "he" ? "בחר קובץ" : "Choose File")}
+                        <input 
+                          type="file" 
+                          accept="image/*,application/pdf" 
+                          className="file-upload-input" 
+                          onChange={handleFileUpload} 
+                        />
+                      </label>
+                    </div>
+                    {uploadError && <div style={{ color: "var(--danger)", fontSize: "11px", marginBottom: "6px" }}>{uploadError}</div>}
+                    
+                    <button 
+                      type="submit" 
+                      className="btn-primary" 
+                      style={{ width: "100%", padding: "8px", fontSize: "13px", borderRadius: "6px" }}
+                      disabled={isUploading}
+                    >
+                      {isUploading ? (lang === "he" ? "מעלה..." : "Uploading...") : (lang === "he" ? "צרף מסמך" : "Attach Document")}
+                    </button>
+                  </form>
+
+                </div>
+
+                {/* Footer buttons */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "24px" }}>
+                  <button 
+                    onClick={() => {
+                      const confirmDel = window.confirm(lang === "he" ? "למחוק את הפעילות הזו?" : "Delete this activity?");
+                      if (confirmDel) {
+                        onDeleteSchedule(activeEvent.id);
+                        setSelectedEventId(null);
+                      }
+                    }}
+                    className="btn-text" 
+                    style={{ color: "var(--danger)" }}
+                  >
+                    <Trash size={16} />
+                    {t.deleteBtn}
+                  </button>
+
+                  <div style={{ display: "flex", gap: "10px" }}>
+                    <button onClick={() => handleStartEdit(activeEvent)} className="btn-secondary" style={{ padding: "8px 16px" }}>
+                      <Edit size={14} />
+                      {t.editBtn}
+                    </button>
+                    <button onClick={() => setSelectedEventId(null)} className="btn-primary" style={{ padding: "8px 16px" }}>
+                      {lang === "he" ? "סגור" : "Close"}
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+            )}
+
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox / Document Preview Modal inside Schedule */}
+      {selectedDocPreview && (
+        <div className="modal-overlay" style={{ zIndex: 1100 }} onClick={() => setSelectedDocPreview(null)}>
+          <div className="modal-content glass-panel" style={{ maxWidth: "500px", position: "relative" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+              <div>
+                <h3 style={{ fontSize: "18px" }}>{selectedDocPreview.title}</h3>
+                <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                  {selectedDocPreview.uploadDate}
+                </span>
+              </div>
+              <button 
+                onClick={() => setSelectedDocPreview(null)}
+                className="btn-secondary"
+                style={{ padding: "6px 12px", fontSize: "12px" }}
+              >
+                X
+              </button>
+            </div>
+            
+            <div className="lightbox-img-container">
+              <img src={selectedDocPreview.fileUrl} alt={selectedDocPreview.title} />
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", color: "var(--text-secondary)" }}>
+              <span>{lang === "he" ? "קובץ:" : "File:"} {selectedDocPreview.fileName}</span>
+              <a 
+                href={selectedDocPreview.fileUrl} 
+                download={selectedDocPreview.fileName}
+                className="btn-text"
+                style={{ color: "var(--primary)", fontWeight: "bold" }}
+              >
+                📥 {lang === "he" ? "הורד קובץ" : "Download File"}
+              </a>
+            </div>
           </div>
         </div>
       )}

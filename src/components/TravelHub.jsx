@@ -1,22 +1,42 @@
 import React, { useState } from "react";
-import { Plus, Plane, Hotel, Paperclip, FileUp, Trash, ExternalLink } from "lucide-react";
+import { Plus, Plane, Hotel, Paperclip, FileUp, Trash, ExternalLink, Edit, Check, X, Calendar } from "lucide-react";
 import { translations } from "../utils/translations";
 import { storageAPI, MOCK_RECEIPT_URL } from "../utils/storage";
+import { audioEngine } from "../utils/audio";
 
-export default function TravelHub({ family, trips, documents, onSaveTrip, onDeleteTrip, onSaveDocument, lang }) {
+export default function TravelHub({ 
+  family, 
+  trips, 
+  documents, 
+  onSaveTrip, 
+  onDeleteTrip, 
+  onSaveDocument, 
+  lang 
+}) {
   const t = translations[lang];
 
   const [showAddModal, setShowAddModal] = useState(false);
-  const [activeTripForUpload, setActiveTripForUpload] = useState(null);
   
-  // Trip Form States
+  // Trip Details Modal States
+  const [selectedTripId, setSelectedTripId] = useState(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [selectedDocPreview, setSelectedDocPreview] = useState(null);
+
+  // Trip Form States (New Trip)
   const [tripName, setTripName] = useState("");
-  // Flight Subform
+  const [destination, setDestination] = useState("");
+  // Flight Subform (Outbound)
   const [airline, setAirline] = useState("");
   const [flightNumber, setFlightNumber] = useState("");
   const [departureDate, setDepartureDate] = useState("");
   const [arrivalDate, setArrivalDate] = useState("");
   const [bookingRef, setBookingRef] = useState("");
+  // Return Flight Subform
+  const [retAirline, setRetAirline] = useState("");
+  const [retFlightNumber, setRetFlightNumber] = useState("");
+  const [retDepartureDate, setRetDepartureDate] = useState("");
+  const [retArrivalDate, setRetArrivalDate] = useState("");
+  const [retBookingRef, setRetBookingRef] = useState("");
   // Hotel Subform
   const [hotelName, setHotelName] = useState("");
   const [hotelAddress, setHotelAddress] = useState("");
@@ -25,15 +45,36 @@ export default function TravelHub({ family, trips, documents, onSaveTrip, onDele
   
   const [error, setError] = useState("");
 
+  // Edit Trip States
+  const [editTripName, setEditTripName] = useState("");
+  const [editDestination, setEditDestination] = useState("");
+  const [editAirline, setEditAirline] = useState("");
+  const [editFlightNumber, setEditFlightNumber] = useState("");
+  const [editDepartureDate, setEditDepartureDate] = useState("");
+  const [editArrivalDate, setEditArrivalDate] = useState("");
+  const [editBookingRef, setEditBookingRef] = useState("");
+  const [editRetAirline, setEditRetAirline] = useState("");
+  const [editRetFlightNumber, setEditRetFlightNumber] = useState("");
+  const [editRetDepartureDate, setEditRetDepartureDate] = useState("");
+  const [editRetArrivalDate, setEditRetArrivalDate] = useState("");
+  const [editRetBookingRef, setEditRetBookingRef] = useState("");
+  const [editHotelName, setEditHotelName] = useState("");
+  const [editHotelAddress, setEditHotelAddress] = useState("");
+  const [editCheckIn, setEditCheckIn] = useState("");
+  const [editCheckOut, setEditCheckOut] = useState("");
+  const [editError, setEditError] = useState("");
+
   // Document Upload States
   const [docTitle, setDocTitle] = useState("");
   const [docMemberId, setDocMemberId] = useState(family.members[0]?.id || "");
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploadedFileName, setUploadedFileName] = useState("");
   const [uploadError, setUploadError] = useState("");
+  const [isUploading, setIsUploading] = useState(false);
 
-  // Open Document Lightbox Callback (handles from parent App)
-  const [selectedDocPreview, setSelectedDocPreview] = useState(null);
+  const getActiveTrip = () => {
+    return trips.find(t => t.id === selectedTripId) || null;
+  };
 
   const handleCreateTrip = (e) => {
     e.preventDefault();
@@ -43,11 +84,13 @@ export default function TravelHub({ family, trips, documents, onSaveTrip, onDele
     }
 
     const hasFlight = airline.trim() || flightNumber.trim() || bookingRef.trim();
+    const hasReturnFlight = retAirline.trim() || retFlightNumber.trim() || retBookingRef.trim();
     const hasHotel = hotelName.trim() || hotelAddress.trim() || checkIn.trim();
 
     const newTrip = {
       id: `trip-${Date.now()}`,
       name: tripName.trim(),
+      destination: destination.trim(),
       flight: hasFlight ? {
         airline: airline.trim(),
         flightNumber: flightNumber.trim(),
@@ -55,24 +98,37 @@ export default function TravelHub({ family, trips, documents, onSaveTrip, onDele
         arrivalDate,
         bookingRef: bookingRef.trim()
       } : null,
+      returnFlight: hasReturnFlight ? {
+        airline: retAirline.trim(),
+        flightNumber: retFlightNumber.trim(),
+        departureDate: retDepartureDate,
+        arrivalDate: retArrivalDate,
+        bookingRef: retBookingRef.trim()
+      } : null,
       hotel: hasHotel ? {
         name: hotelName.trim(),
         address: hotelAddress.trim(),
         checkIn,
         checkOut
       } : null,
-      documents: [] // Array of document IDs
+      documents: [] // Array of documents
     };
 
     onSaveTrip(newTrip);
 
     // Reset States
     setTripName("");
+    setDestination("");
     setAirline("");
     setFlightNumber("");
     setDepartureDate("");
     setArrivalDate("");
     setBookingRef("");
+    setRetAirline("");
+    setRetFlightNumber("");
+    setRetDepartureDate("");
+    setRetArrivalDate("");
+    setRetBookingRef("");
     setHotelName("");
     setHotelAddress("");
     setCheckIn("");
@@ -81,7 +137,70 @@ export default function TravelHub({ family, trips, documents, onSaveTrip, onDele
     setError("");
   };
 
-  // Simulating File Upload & keeping File references
+  const handleStartEdit = (trip) => {
+    audioEngine.playSFX("click");
+    setEditTripName(trip.name);
+    setEditDestination(trip.destination || "");
+    setEditAirline(trip.flight?.airline || "");
+    setEditFlightNumber(trip.flight?.flightNumber || "");
+    setEditDepartureDate(trip.flight?.departureDate || "");
+    setEditArrivalDate(trip.flight?.arrivalDate || "");
+    setEditBookingRef(trip.flight?.bookingRef || "");
+    setEditRetAirline(trip.returnFlight?.airline || "");
+    setEditRetFlightNumber(trip.returnFlight?.flightNumber || "");
+    setEditRetDepartureDate(trip.returnFlight?.departureDate || "");
+    setEditRetArrivalDate(trip.returnFlight?.arrivalDate || "");
+    setEditRetBookingRef(trip.returnFlight?.bookingRef || "");
+    setEditHotelName(trip.hotel?.name || "");
+    setEditHotelAddress(trip.hotel?.address || "");
+    setEditCheckIn(trip.hotel?.checkIn || "");
+    setEditCheckOut(trip.hotel?.checkOut || "");
+    setIsEditing(true);
+  };
+
+  const handleSaveEdit = (e) => {
+    e.preventDefault();
+    if (!editTripName.trim()) {
+      setEditError(t.requiredField);
+      return;
+    }
+
+    const activeTrip = getActiveTrip();
+    const hasFlight = editAirline.trim() || editFlightNumber.trim() || editBookingRef.trim();
+    const hasReturnFlight = editRetAirline.trim() || editRetFlightNumber.trim() || editRetBookingRef.trim();
+    const hasHotel = editHotelName.trim() || editHotelAddress.trim() || editCheckIn.trim();
+
+    const updatedTrip = {
+      ...activeTrip,
+      name: editTripName.trim(),
+      destination: editDestination.trim(),
+      flight: hasFlight ? {
+        airline: editAirline.trim(),
+        flightNumber: editFlightNumber.trim(),
+        departureDate: editDepartureDate,
+        arrivalDate: editArrivalDate,
+        bookingRef: editBookingRef.trim()
+      } : null,
+      returnFlight: hasReturnFlight ? {
+        airline: editRetAirline.trim(),
+        flightNumber: editRetFlightNumber.trim(),
+        departureDate: editRetDepartureDate,
+        arrivalDate: editRetArrivalDate,
+        bookingRef: editRetBookingRef.trim()
+      } : null,
+      hotel: hasHotel ? {
+        name: editHotelName.trim(),
+        address: editHotelAddress.trim(),
+        checkIn: editCheckIn,
+        checkOut: editCheckOut
+      } : null
+    };
+
+    onSaveTrip(updatedTrip);
+    setIsEditing(false);
+    setEditError("");
+  };
+
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -100,10 +219,13 @@ export default function TravelHub({ family, trips, documents, onSaveTrip, onDele
       return;
     }
 
-    const docId = `doc-${Date.now()}`;
-    const fileName = uploadedFileName || "simulated_receipt.png";
+    const activeTrip = getActiveTrip();
+    if (!activeTrip) return;
 
-    // Asynchronous upload to Vercel Blob (falls back to local base64 if offline)
+    setIsUploading(true);
+    const docId = `doc-${Date.now()}`;
+    const fileName = uploadedFileName || "boarding_pass.png";
+
     let fileUrl = MOCK_RECEIPT_URL;
     if (selectedFile) {
       fileUrl = await storageAPI.uploadDocumentFile(selectedFile);
@@ -119,13 +241,13 @@ export default function TravelHub({ family, trips, documents, onSaveTrip, onDele
       uploadDate: new Date().toISOString().split("T")[0]
     };
 
-    // Save standalone document
+    // Save document globally
     await onSaveDocument(newDoc);
 
-    // Link document to the specific trip
+    // Link document directly to this trip
     const updatedTrip = {
-      ...activeTripForUpload,
-      documents: [...(activeTripForUpload.documents || []), docId]
+      ...activeTrip,
+      documents: [...(activeTrip.documents || []), newDoc]
     };
     await onSaveTrip(updatedTrip);
 
@@ -133,19 +255,32 @@ export default function TravelHub({ family, trips, documents, onSaveTrip, onDele
     setDocTitle("");
     setSelectedFile(null);
     setUploadedFileName("");
-    setActiveTripForUpload(null);
     setUploadError("");
+    setIsUploading(false);
   };
 
-  // Helper to retrieve documents attached to a specific trip
-  const getTripDocuments = (tripDocIds) => {
-    if (!tripDocIds) return [];
-    return documents.filter(d => tripDocIds.includes(d.id));
+  // Helper to map old document ID strings to full objects, supporting retro compatibility
+  const getTripDocuments = (tripDocs) => {
+    if (!tripDocs) return [];
+    return tripDocs.map(d => {
+      if (typeof d === "string") {
+        return documents.find(doc => doc.id === d) || { id: d, title: "Document", fileName: "attachment.png", fileUrl: MOCK_RECEIPT_URL, uploadDate: "2026-05-30" };
+      }
+      return d;
+    }).filter(Boolean);
   };
 
   const getMember = (id) => {
     return family.members.find(m => m.id === id) || {};
   };
+
+  const handleOpenDetails = (trip) => {
+    audioEngine.playSFX("click");
+    setSelectedTripId(trip.id);
+    setIsEditing(false);
+  };
+
+  const activeTrip = getActiveTrip();
 
   return (
     <div>
@@ -158,7 +293,7 @@ export default function TravelHub({ family, trips, documents, onSaveTrip, onDele
         </div>
 
         <button 
-          onClick={() => setShowAddModal(true)} 
+          onClick={() => { audioEngine.playSFX("click"); setShowAddModal(true); }} 
           className="btn-primary"
         >
           <Plus size={18} />
@@ -173,278 +308,165 @@ export default function TravelHub({ family, trips, documents, onSaveTrip, onDele
           <p>{t.noUpcomingTrips}</p>
         </div>
       ) : (
-        trips.map(trip => {
-          const tripDocs = getTripDocuments(trip.documents);
-          return (
-            <div key={trip.id} className="glass-panel trip-card">
-              <div className="trip-header">
-                <h3 style={{ fontSize: "18px", fontWeight: "700" }}>✈️ {trip.name}</h3>
-                
-                <button 
-                  onClick={() => onDeleteTrip(trip.id)}
-                  className="btn-text"
-                  style={{ color: "var(--danger)" }}
-                >
-                  <Trash size={16} />
-                </button>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "20px" }}>
+          {trips.map(trip => (
+            <div 
+              key={trip.id} 
+              onClick={() => handleOpenDetails(trip)}
+              className="glass-panel trip-card" 
+              style={{ padding: "20px", cursor: "pointer" }}
+            >
+              <div className="trip-header" style={{ border: "none", marginBottom: 0, paddingBottom: 0 }}>
+                <h3 style={{ fontSize: "17px", fontWeight: "700" }}>
+                  ✈️ {trip.name}
+                  {trip.destination && <span style={{ fontSize: "13px", color: "var(--text-secondary)", display: "block", marginTop: "4px" }}>📍 {trip.destination}</span>}
+                </h3>
               </div>
-
-              <div className="trip-grid">
-                {/* Flight Section */}
-                {trip.flight ? (
-                  <div className="trip-segment">
-                    <h4 className="segment-title">
-                      <Plane size={18} />
-                      {t.flightSection}
-                    </h4>
-                    <div className="info-row">
-                      <span className="info-label">{t.airline}:</span>
-                      <span className="info-value">{trip.flight.airline}</span>
-                    </div>
-                    <div className="info-row">
-                      <span className="info-label">{t.flightNumber}:</span>
-                      <span className="info-value">{trip.flight.flightNumber}</span>
-                    </div>
-                    {trip.flight.departureDate && (
-                      <div className="info-row">
-                        <span className="info-label">{t.departureDate}:</span>
-                        <span className="info-value" style={{ direction: "ltr" }}>
-                          {new Date(trip.flight.departureDate).toLocaleString(lang === "he" ? "he-IL" : "en-US", { dateStyle: "short", timeStyle: "short" })}
-                        </span>
-                      </div>
-                    )}
-                    {trip.flight.arrivalDate && (
-                      <div className="info-row">
-                        <span className="info-label">{t.arrivalDate}:</span>
-                        <span className="info-value" style={{ direction: "ltr" }}>
-                          {new Date(trip.flight.arrivalDate).toLocaleString(lang === "he" ? "he-IL" : "en-US", { dateStyle: "short", timeStyle: "short" })}
-                        </span>
-                      </div>
-                    )}
-                    <div className="info-row">
-                      <span className="info-label">{t.bookingRef}:</span>
-                      <span className="info-value" style={{ direction: "ltr", color: "var(--primary)" }}>{trip.flight.bookingRef}</span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="trip-segment" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "150px", color: "var(--text-muted)", fontSize: "14px" }}>
-                    <span>{lang === "he" ? "אין פרטי טיסה מעודכנים" : "No flight details listed"}</span>
-                  </div>
-                )}
-
-                {/* Hotel Section */}
-                {trip.hotel ? (
-                  <div className="trip-segment">
-                    <h4 className="segment-title">
-                      <Hotel size={18} />
-                      {t.hotelSection}
-                    </h4>
-                    <div className="info-row">
-                      <span className="info-label">{t.hotelName}:</span>
-                      <span className="info-value">{trip.hotel.name}</span>
-                    </div>
-                    <div className="info-row">
-                      <span className="info-label">{t.hotelAddress}:</span>
-                      <span className="info-value" style={{ fontSize: "12px", maxWidth: "60%", textAlign: "end" }}>{trip.hotel.address}</span>
-                    </div>
-                    <div className="info-row">
-                      <span className="info-label">{t.checkIn}:</span>
-                      <span className="info-value">{trip.hotel.checkIn}</span>
-                    </div>
-                    <div className="info-row">
-                      <span className="info-label">{t.checkOut}:</span>
-                      <span className="info-value">{trip.hotel.checkOut}</span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="trip-segment" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "150px", color: "var(--text-muted)", fontSize: "14px" }}>
-                    <span>{lang === "he" ? "אין פרטי מלון מעודכנים" : "No hotel details listed"}</span>
-                  </div>
-                )}
+              
+              <div style={{ display: "flex", gap: "10px", marginTop: "16px", fontSize: "12px", color: "var(--text-secondary)" }}>
+                {trip.flight && <span style={{ background: "rgba(59, 130, 246, 0.1)", padding: "4px 8px", borderRadius: "4px" }}>🛫 {lang === "he" ? "הלוך" : "Outbound"}</span>}
+                {trip.returnFlight && <span style={{ background: "rgba(139, 92, 246, 0.1)", padding: "4px 8px", borderRadius: "4px" }}>🛬 {lang === "he" ? "חזור" : "Return"}</span>}
+                {trip.hotel && <span style={{ background: "rgba(16, 185, 129, 0.1)", padding: "4px 8px", borderRadius: "4px" }}>🏨 {lang === "he" ? "מלון" : "Hotel"}</span>}
               </div>
-
-              {/* Trip documents / Receipts */}
-              <div className="trip-attachments">
-                <h4 style={{ fontSize: "14px", fontWeight: "700", color: "var(--text-secondary)", marginBottom: "8px" }}>
-                  <Paperclip size={14} style={{ verticalAlign: "middle", marginInlineEnd: "6px" }} />
-                  {t.documentsAttached}
-                </h4>
-
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
-                  {tripDocs.map(doc => {
-                    const m = getMember(doc.memberId);
-                    return (
-                      <div 
-                        key={doc.id}
-                        onClick={() => setSelectedDocPreview(doc)}
-                        className="attachment-badge"
-                        style={{ borderColor: m.color, color: m.color }}
-                      >
-                        <span style={{ fontWeight: "bold" }}>{doc.title}</span>
-                        <span style={{ fontSize: "10px", opacity: 0.8 }}>({m.name})</span>
-                        <ExternalLink size={10} />
-                      </div>
-                    );
-                  })}
-
-                  <button 
-                    onClick={() => setActiveTripForUpload(trip)}
-                    className="btn-secondary"
-                    style={{ padding: "6px 12px", fontSize: "12px", borderRadius: "20px", borderStyle: "dashed" }}
-                  >
-                    <Plus size={12} />
-                    {t.uploadDoc}
-                  </button>
-                </div>
+              
+              <div style={{ marginTop: "12px", fontSize: "11px", color: "var(--text-muted)" }}>
+                {trip.documents ? `${trip.documents.length} ${lang === "he" ? "מסמכים מצורפים" : "documents linked"}` : (lang === "he" ? "אין מסמכים" : "No docs")}
               </div>
-
             </div>
-          );
-        })
+          ))}
+        </div>
       )}
 
       {/* Add Trip Modal */}
       {showAddModal && (
-        <div className="modal-overlay">
-          <div className="modal-content glass-panel" style={{ maxWidth: "600px" }}>
+        <div className="modal-overlay" onClick={() => setShowAddModal(false)}>
+          <div className="modal-content glass-panel" style={{ maxWidth: "600px" }} onClick={(e) => e.stopPropagation()}>
             <h3 style={{ fontSize: "20px", marginBottom: "20px", display: "flex", alignItems: "center", gap: "8px" }}>
               <Plane size={20} color="var(--primary)" />
               {t.addTrip}
             </h3>
 
             <form onSubmit={handleCreateTrip}>
-              {/* Trip Title */}
-              <div className="form-group">
-                <label>{t.tripName}</label>
-                <input 
-                  type="text" 
-                  className="form-input"
-                  value={tripName}
-                  onChange={(e) => { setTripName(e.target.value); setError(""); }}
-                  placeholder={lang === "he" ? "למשל: חופשה משפחתית באילת" : "e.g. Vacation to Eilat"}
-                />
-                {error && <span style={{ color: "var(--danger)", fontSize: "12px" }}>{error}</span>}
+              {/* Trip Title & Destination */}
+              <div className="grid-cols-2">
+                <div className="form-group">
+                  <label>{t.tripName}</label>
+                  <input 
+                    type="text" 
+                    className="form-input"
+                    value={tripName}
+                    onChange={(e) => { setTripName(e.target.value); setError(""); }}
+                    placeholder={lang === "he" ? "חופשה משפחתית באילת" : "Family Vacation"}
+                  />
+                  {error && <span style={{ color: "var(--danger)", fontSize: "12px" }}>{error}</span>}
+                </div>
+                <div className="form-group">
+                  <label>{lang === "he" ? "יעד" : "Destination"}</label>
+                  <input 
+                    type="text" 
+                    className="form-input"
+                    value={destination}
+                    onChange={(e) => setDestination(e.target.value)}
+                    placeholder={lang === "he" ? "יוון, אילת, פריז" : "Greece, Paris..."}
+                  />
+                </div>
               </div>
 
-              {/* Flights grid */}
+              {/* Outbound Flights segment */}
               <div style={{ background: "rgba(255,255,255,0.01)", border: "1px solid var(--border-glass)", borderRadius: "12px", padding: "16px", marginBottom: "16px" }}>
-                <h4 style={{ fontSize: "15px", marginBottom: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
-                  <Plane size={16} color="var(--primary)" />
-                  {t.flightSection}
+                <h4 style={{ fontSize: "14px", fontWeight: "bold", marginBottom: "12px", display: "flex", alignItems: "center", gap: "6px", color: "var(--info)" }}>
+                  <Plane size={16} />
+                  🛫 {lang === "he" ? "טיסת הלוך" : "Outbound Flight"}
                 </h4>
                 <div className="grid-cols-2">
                   <div className="form-group">
                     <label>{t.airline}</label>
-                    <input 
-                      type="text" 
-                      className="form-input" 
-                      value={airline} 
-                      onChange={(e) => setAirline(e.target.value)} 
-                      placeholder="El Al, Ryanair..." 
-                    />
+                    <input type="text" className="form-input" value={airline} onChange={(e) => setAirline(e.target.value)} placeholder="El Al, Ryanair..." />
                   </div>
                   <div className="form-group">
                     <label>{t.flightNumber}</label>
-                    <input 
-                      type="text" 
-                      className="form-input" 
-                      value={flightNumber} 
-                      onChange={(e) => setFlightNumber(e.target.value)} 
-                      placeholder="LY-381" 
-                    />
+                    <input type="text" className="form-input" value={flightNumber} onChange={(e) => setFlightNumber(e.target.value)} placeholder="LY-381" />
                   </div>
                 </div>
                 <div className="grid-cols-2">
                   <div className="form-group">
                     <label>{t.departureDate}</label>
-                    <input 
-                      type="datetime-local" 
-                      className="form-input" 
-                      value={departureDate} 
-                      onChange={(e) => setDepartureDate(e.target.value)} 
-                    />
+                    <input type="datetime-local" className="form-input" value={departureDate} onChange={(e) => setDepartureDate(e.target.value)} />
                   </div>
                   <div className="form-group">
                     <label>{t.arrivalDate}</label>
-                    <input 
-                      type="datetime-local" 
-                      className="form-input" 
-                      value={arrivalDate} 
-                      onChange={(e) => setArrivalDate(e.target.value)} 
-                    />
+                    <input type="datetime-local" className="form-input" value={arrivalDate} onChange={(e) => setArrivalDate(e.target.value)} />
                   </div>
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label>{t.bookingRef}</label>
-                  <input 
-                    type="text" 
-                    className="form-input" 
-                    value={bookingRef} 
-                    onChange={(e) => setBookingRef(e.target.value)} 
-                    placeholder="Booking Code / PNR" 
-                  />
+                  <input type="text" className="form-input" value={bookingRef} onChange={(e) => setBookingRef(e.target.value)} placeholder="Booking Code / PNR" />
+                </div>
+              </div>
+
+              {/* Return Flights segment */}
+              <div style={{ background: "rgba(255,255,255,0.01)", border: "1px solid var(--border-glass)", borderRadius: "12px", padding: "16px", marginBottom: "16px" }}>
+                <h4 style={{ fontSize: "14px", fontWeight: "bold", marginBottom: "12px", display: "flex", alignItems: "center", gap: "6px", color: "var(--primary)" }}>
+                  <Plane size={16} />
+                  🛬 {lang === "he" ? "טיסה חזור" : "Return Flight"}
+                </h4>
+                <div className="grid-cols-2">
+                  <div className="form-group">
+                    <label>{t.airline}</label>
+                    <input type="text" className="form-input" value={retAirline} onChange={(e) => setRetAirline(e.target.value)} placeholder="El Al, Ryanair..." />
+                  </div>
+                  <div className="form-group">
+                    <label>{t.flightNumber}</label>
+                    <input type="text" className="form-input" value={retFlightNumber} onChange={(e) => setRetFlightNumber(e.target.value)} placeholder="LY-382" />
+                  </div>
+                </div>
+                <div className="grid-cols-2">
+                  <div className="form-group">
+                    <label>{t.departureDate}</label>
+                    <input type="datetime-local" className="form-input" value={retDepartureDate} onChange={(e) => setRetDepartureDate(e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label>{t.arrivalDate}</label>
+                    <input type="datetime-local" className="form-input" value={retArrivalDate} onChange={(e) => setRetArrivalDate(e.target.value)} />
+                  </div>
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>{t.bookingRef}</label>
+                  <input type="text" className="form-input" value={retBookingRef} onChange={(e) => setRetBookingRef(e.target.value)} placeholder="Booking Code / PNR" />
                 </div>
               </div>
 
               {/* Hotel fields */}
               <div style={{ background: "rgba(255,255,255,0.01)", border: "1px solid var(--border-glass)", borderRadius: "12px", padding: "16px" }}>
-                <h4 style={{ fontSize: "15px", marginBottom: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
-                  <Hotel size={16} color="var(--primary)" />
+                <h4 style={{ fontSize: "14px", fontWeight: "bold", marginBottom: "12px", display: "flex", alignItems: "center", gap: "6px", color: "var(--success)" }}>
+                  <Hotel size={16} />
                   {t.hotelSection}
                 </h4>
                 <div className="form-group">
                   <label>{t.hotelName}</label>
-                  <input 
-                    type="text" 
-                    className="form-input" 
-                    value={hotelName} 
-                    onChange={(e) => setHotelName(e.target.value)} 
-                    placeholder="Hilton, Cozy Airbnb..." 
-                  />
+                  <input type="text" className="form-input" value={hotelName} onChange={(e) => setHotelName(e.target.value)} placeholder="Hilton, Cozy Airbnb..." />
                 </div>
                 <div className="form-group">
                   <label>{t.hotelAddress}</label>
-                  <input 
-                    type="text" 
-                    className="form-input" 
-                    value={hotelAddress} 
-                    onChange={(e) => setHotelAddress(e.target.value)} 
-                  />
+                  <input type="text" className="form-input" value={hotelAddress} onChange={(e) => setHotelAddress(e.target.value)} />
                 </div>
                 <div className="grid-cols-2" style={{ marginBottom: 0 }}>
                   <div className="form-group">
                     <label>{t.checkIn}</label>
-                    <input 
-                      type="date" 
-                      className="form-input" 
-                      value={checkIn} 
-                      onChange={(e) => setCheckIn(e.target.value)} 
-                    />
+                    <input type="date" className="form-input" value={checkIn} onChange={(e) => setCheckIn(e.target.value)} />
                   </div>
                   <div className="form-group">
                     <label>{t.checkOut}</label>
-                    <input 
-                      type="date" 
-                      className="form-input" 
-                      value={checkOut} 
-                      onChange={(e) => setCheckOut(e.target.value)} 
-                    />
+                    <input type="date" className="form-input" value={checkOut} onChange={(e) => setCheckOut(e.target.value)} />
                   </div>
                 </div>
               </div>
 
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "24px" }}>
-                <button 
-                  type="button" 
-                  onClick={() => setShowAddModal(false)}
-                  className="btn-secondary"
-                >
+                <button type="button" onClick={() => setShowAddModal(false)} className="btn-secondary">
                   {t.cancel}
                 </button>
-                <button 
-                  type="submit" 
-                  className="btn-primary"
-                >
+                <button type="submit" className="btn-primary">
                   {t.save}
                 </button>
               </div>
@@ -453,99 +475,308 @@ export default function TravelHub({ family, trips, documents, onSaveTrip, onDele
         </div>
       )}
 
-      {/* Upload Document Modal (triggered for a specific trip) */}
-      {activeTripForUpload && (
-        <div className="modal-overlay">
-          <div className="modal-content glass-panel" style={{ maxWidth: "450px" }}>
-            <h3 style={{ fontSize: "20px", marginBottom: "20px", display: "flex", alignItems: "center", gap: "8px" }}>
-              <FileUp size={20} color="var(--primary)" />
-              {t.uploadNewDoc}
-            </h3>
-
-            <form onSubmit={handleSaveDocument}>
-              {/* Document Title */}
-              <div className="form-group">
-                <label>{t.receiptTitle}</label>
-                <input 
-                  type="text" 
-                  className="form-input"
-                  value={docTitle}
-                  onChange={(e) => { setDocTitle(e.target.value); setUploadError(""); }}
-                  placeholder={lang === "he" ? "כרטיס עלייה למטוס, קבלה על מלון" : "e.g. Flight Ticket"}
-                />
-                {uploadError && <span style={{ color: "var(--danger)", fontSize: "12px" }}>{uploadError}</span>}
+      {/* Dynamic Trip details modal page */}
+      {activeTrip && (
+        <div className="modal-overlay" onClick={() => setSelectedTripId(null)}>
+          <div className="modal-content glass-panel" style={{ maxWidth: "600px" }} onClick={(e) => e.stopPropagation()}>
+            
+            {/* Modal Header */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "20px" }}>
+              <div>
+                <span className="smart-badge flight">📍 {lang === "he" ? "אירוע נסיעה" : "Travel Event"}</span>
+                <h3 style={{ fontSize: "22px", fontWeight: "800", marginTop: "8px" }}>{activeTrip.name}</h3>
+                {activeTrip.destination && <span style={{ fontSize: "14px", color: "var(--text-secondary)" }}>📍 {activeTrip.destination}</span>}
               </div>
+              <button 
+                onClick={() => setSelectedTripId(null)}
+                style={{ background: "transparent", border: "none", color: "var(--text-secondary)", cursor: "pointer" }}
+              >
+                <X size={20} />
+              </button>
+            </div>
 
-              {/* Assign to Member */}
-              <div className="form-group">
-                <label>{t.selectMember}</label>
-                <select 
-                  className="form-select"
-                  value={docMemberId}
-                  onChange={(e) => setDocMemberId(e.target.value)}
-                >
-                  {family.members.map(m => (
-                    <option key={m.id} value={m.id}>
-                      {m.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            {isEditing ? (
+              // EDIT FORM inside Details Modal
+              <form onSubmit={handleSaveEdit}>
+                <div className="grid-cols-2">
+                  <div className="form-group">
+                    <label>{t.tripName}</label>
+                    <input type="text" className="form-input" value={editTripName} onChange={(e) => { setEditTripName(e.target.value); setEditError(""); }} />
+                    {editError && <span style={{ color: "var(--danger)", fontSize: "12px" }}>{editError}</span>}
+                  </div>
+                  <div className="form-group">
+                    <label>{lang === "he" ? "יעד" : "Destination"}</label>
+                    <input type="text" className="form-input" value={editDestination} onChange={(e) => setEditDestination(e.target.value)} />
+                  </div>
+                </div>
 
-              {/* File upload selector */}
-              <div className="form-group">
-                <label>{lang === "he" ? "בחר קובץ" : "Choose File"}</label>
-                <label className="file-upload-dropzone">
-                  <FileUp size={32} color="var(--text-secondary)" style={{ marginBottom: "8px" }} />
-                  <span style={{ fontSize: "14px", fontWeight: "600" }}>
-                    {uploadedFileName || t.dragAndDrop}
-                  </span>
-                  <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-                    {lang === "he" ? "(תומך בתמונות וקבלות)" : "(Supports images & documents)"}
-                  </span>
-                  <input 
-                    type="file" 
-                    accept="image/*,application/pdf"
-                    className="file-upload-input"
-                    onChange={handleFileUpload}
-                  />
-                </label>
-              </div>
+                {/* Edit Outbound Flight */}
+                <div style={{ background: "rgba(255,255,255,0.01)", border: "1px solid var(--border-glass)", borderRadius: "12px", padding: "16px", marginBottom: "16px" }}>
+                  <h4 style={{ fontSize: "14px", fontWeight: "bold", marginBottom: "12px", color: "var(--info)" }}>
+                    🛫 {lang === "he" ? "ערוך טיסה הלוך" : "Edit Outbound Flight"}
+                  </h4>
+                  <div className="grid-cols-2">
+                    <div className="form-group">
+                      <label>{t.airline}</label>
+                      <input type="text" className="form-input" value={editAirline} onChange={(e) => setEditAirline(e.target.value)} />
+                    </div>
+                    <div className="form-group">
+                      <label>{t.flightNumber}</label>
+                      <input type="text" className="form-input" value={editFlightNumber} onChange={(e) => setEditFlightNumber(e.target.value)} />
+                    </div>
+                  </div>
+                  <div className="grid-cols-2">
+                    <div className="form-group">
+                      <label>{t.departureDate}</label>
+                      <input type="datetime-local" className="form-input" value={editDepartureDate} onChange={(e) => setEditDepartureDate(e.target.value)} />
+                    </div>
+                    <div className="form-group">
+                      <label>{t.arrivalDate}</label>
+                      <input type="datetime-local" className="form-input" value={editArrivalDate} onChange={(e) => setEditArrivalDate(e.target.value)} />
+                    </div>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>{t.bookingRef}</label>
+                    <input type="text" className="form-input" value={editBookingRef} onChange={(e) => setEditBookingRef(e.target.value)} />
+                  </div>
+                </div>
 
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "24px" }}>
-                <button 
-                  type="button" 
-                  onClick={() => {
-                    setDocTitle("");
-                    setUploadedBase64("");
-                    setUploadedFileName("");
-                    setActiveTripForUpload(null);
-                  }}
-                  className="btn-secondary"
-                >
-                  {t.cancel}
-                </button>
-                <button 
-                  type="submit" 
-                  className="btn-primary"
-                >
-                  {t.save}
-                </button>
+                {/* Edit Return Flight */}
+                <div style={{ background: "rgba(255,255,255,0.01)", border: "1px solid var(--border-glass)", borderRadius: "12px", padding: "16px", marginBottom: "16px" }}>
+                  <h4 style={{ fontSize: "14px", fontWeight: "bold", marginBottom: "12px", color: "var(--primary)" }}>
+                    🛬 {lang === "he" ? "ערוך טיסה חזור" : "Edit Return Flight"}
+                  </h4>
+                  <div className="grid-cols-2">
+                    <div className="form-group">
+                      <label>{t.airline}</label>
+                      <input type="text" className="form-input" value={editRetAirline} onChange={(e) => setEditRetAirline(e.target.value)} />
+                    </div>
+                    <div className="form-group">
+                      <label>{t.flightNumber}</label>
+                      <input type="text" className="form-input" value={editRetFlightNumber} onChange={(e) => setEditRetFlightNumber(e.target.value)} />
+                    </div>
+                  </div>
+                  <div className="grid-cols-2">
+                    <div className="form-group">
+                      <label>{t.departureDate}</label>
+                      <input type="datetime-local" className="form-input" value={editRetDepartureDate} onChange={(e) => setEditRetDepartureDate(e.target.value)} />
+                    </div>
+                    <div className="form-group">
+                      <label>{t.arrivalDate}</label>
+                      <input type="datetime-local" className="form-input" value={editRetArrivalDate} onChange={(e) => setEditRetArrivalDate(e.target.value)} />
+                    </div>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>{t.bookingRef}</label>
+                    <input type="text" className="form-input" value={editRetBookingRef} onChange={(e) => setEditRetBookingRef(e.target.value)} />
+                  </div>
+                </div>
+
+                {/* Edit Hotel details */}
+                <div style={{ background: "rgba(255,255,255,0.01)", border: "1px solid var(--border-glass)", borderRadius: "12px", padding: "16px" }}>
+                  <h4 style={{ fontSize: "14px", fontWeight: "bold", marginBottom: "12px", color: "var(--success)" }}>
+                    🏨 {t.hotelSection}
+                  </h4>
+                  <div className="form-group">
+                    <label>{t.hotelName}</label>
+                    <input type="text" className="form-input" value={editHotelName} onChange={(e) => setEditHotelName(e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label>{t.hotelAddress}</label>
+                    <input type="text" className="form-input" value={editHotelAddress} onChange={(e) => setEditHotelAddress(e.target.value)} />
+                  </div>
+                  <div className="grid-cols-2" style={{ marginBottom: 0 }}>
+                    <div className="form-group">
+                      <label>{t.checkIn}</label>
+                      <input type="date" className="form-input" value={editCheckIn} onChange={(e) => setEditCheckIn(e.target.value)} />
+                    </div>
+                    <div className="form-group">
+                      <label>{t.checkOut}</label>
+                      <input type="date" className="form-input" value={editCheckOut} onChange={(e) => setEditCheckOut(e.target.value)} />
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: "10px", marginTop: "24px" }}>
+                  <button type="button" onClick={() => setIsEditing(false)} className="btn-secondary" style={{ flex: 1 }}>
+                    {t.cancel}
+                  </button>
+                  <button type="submit" className="btn-primary" style={{ flex: 1 }}>
+                    <Check size={16} />
+                    {t.save}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              // SMART DETAIL LAYOUT (Goal-oriented)
+              <div>
+                
+                {/* Outbound Flight Segment */}
+                {activeTrip.flight ? (
+                  <div style={{ padding: "16px", borderRadius: "12px", background: "rgba(59, 130, 246, 0.05)", border: "1px solid rgba(59, 130, 246, 0.15)", marginBottom: "16px", fontSize: "14px" }}>
+                    <h4 style={{ fontWeight: "700", color: "var(--info)", marginBottom: "8px" }}>🛫 {lang === "he" ? "טיסת הלוך" : "Outbound Flight"}</h4>
+                    <div className="grid-cols-2" style={{ gap: "8px" }}>
+                      <div><strong>{t.airline}:</strong> {activeTrip.flight.airline}</div>
+                      <div><strong>{t.flightNumber}:</strong> {activeTrip.flight.flightNumber}</div>
+                      {activeTrip.flight.departureDate && <div><strong>{lang === "he" ? "המראה:" : "Departure:"}</strong> {new Date(activeTrip.flight.departureDate).toLocaleString(lang === "he" ? "he" : "en-US", {dateStyle:"short", timeStyle:"short"})}</div>}
+                      {activeTrip.flight.arrivalDate && <div><strong>{lang === "he" ? "נחיתה:" : "Landing:"}</strong> {new Date(activeTrip.flight.arrivalDate).toLocaleString(lang === "he" ? "he" : "en-US", {dateStyle:"short", timeStyle:"short"})}</div>}
+                      <div><strong>{t.bookingRef}:</strong> <span style={{ color: "var(--info)", fontWeight: "bold" }}>{activeTrip.flight.bookingRef}</span></div>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ padding: "12px", border: "1px dashed var(--border-glass)", borderRadius: "12px", color: "var(--text-muted)", fontSize: "13px", marginBottom: "16px", textAlign: "center" }}>
+                    {lang === "he" ? "אין פרטי טיסת הלוך. ערוך להזנת פרטים." : "No outbound flight listed."}
+                  </div>
+                )}
+
+                {/* Return Flight Segment */}
+                {activeTrip.returnFlight ? (
+                  <div style={{ padding: "16px", borderRadius: "12px", background: "rgba(139, 92, 246, 0.05)", border: "1px solid rgba(139, 92, 246, 0.15)", marginBottom: "16px", fontSize: "14px" }}>
+                    <h4 style={{ fontWeight: "700", color: "var(--primary)", marginBottom: "8px" }}>🛬 {lang === "he" ? "טיסה חזור" : "Return Flight"}</h4>
+                    <div className="grid-cols-2" style={{ gap: "8px" }}>
+                      <div><strong>{t.airline}:</strong> {activeTrip.returnFlight.airline}</div>
+                      <div><strong>{t.flightNumber}:</strong> {activeTrip.returnFlight.flightNumber}</div>
+                      {activeTrip.returnFlight.departureDate && <div><strong>{lang === "he" ? "המראה חזור:" : "Return Departure:"}</strong> {new Date(activeTrip.returnFlight.departureDate).toLocaleString(lang === "he" ? "he" : "en-US", {dateStyle:"short", timeStyle:"short"})}</div>}
+                      {activeTrip.returnFlight.arrivalDate && <div><strong>{lang === "he" ? "נחיתה בארץ:" : "Return Landing:"}</strong> {new Date(activeTrip.returnFlight.arrivalDate).toLocaleString(lang === "he" ? "he" : "en-US", {dateStyle:"short", timeStyle:"short"})}</div>}
+                      <div><strong>{t.bookingRef}:</strong> <span style={{ color: "var(--primary)", fontWeight: "bold" }}>{activeTrip.returnFlight.bookingRef}</span></div>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ padding: "12px", border: "1px dashed var(--border-glass)", borderRadius: "12px", color: "var(--text-muted)", fontSize: "13px", marginBottom: "16px", textAlign: "center" }}>
+                    {lang === "he" ? "אין פרטי טיסת חזור. ערוך להזנת פרטים." : "No return flight details listed."}
+                  </div>
+                )}
+
+                {/* Hotel Segment */}
+                {activeTrip.hotel ? (
+                  <div style={{ padding: "16px", borderRadius: "12px", background: "rgba(16, 185, 129, 0.05)", border: "1px solid rgba(16, 185, 129, 0.15)", marginBottom: "16px", fontSize: "14px" }}>
+                    <h4 style={{ fontWeight: "700", color: "var(--success)", marginBottom: "8px" }}>🏨 {t.hotelSection}</h4>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                      <div><strong>{t.hotelName}:</strong> {activeTrip.hotel.name}</div>
+                      {activeTrip.hotel.address && <div><strong>{t.hotelAddress}:</strong> {activeTrip.hotel.address}</div>}
+                      <div><strong>{t.checkIn}:</strong> {activeTrip.hotel.checkIn} | <strong>{t.checkOut}:</strong> {activeTrip.hotel.checkOut}</div>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ padding: "12px", border: "1px dashed var(--border-glass)", borderRadius: "12px", color: "var(--text-muted)", fontSize: "13px", marginBottom: "16px", textAlign: "center" }}>
+                    {lang === "he" ? "אין פרטי מלון מעודכנים. ערוך להזנת פרטים." : "No hotel details listed."}
+                  </div>
+                )}
+
+                {/* Documents List & Inline Uploader */}
+                <div style={{ marginTop: "20px", paddingTop: "16px", borderTop: "1px solid var(--border-glass)" }}>
+                  <h4 style={{ fontSize: "14px", fontWeight: "700", color: "var(--text-secondary)", marginBottom: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
+                    <Paperclip size={14} />
+                    {t.documentsAttached} ({(activeTrip.documents && activeTrip.documents.length) || 0})
+                  </h4>
+
+                  {/* Render document list */}
+                  <div className="inline-docs-container">
+                    {getTripDocuments(activeTrip.documents).map(doc => (
+                      <div key={doc.id} className="inline-doc-item">
+                        <span style={{ fontWeight: "600" }}>{doc.title}</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                          <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>({doc.fileName})</span>
+                          <button 
+                            onClick={() => setSelectedDocPreview(doc)} 
+                            className="inline-doc-link"
+                          >
+                            <ExternalLink size={12} />
+                            {lang === "he" ? "הצג" : "View"}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    {(!activeTrip.documents || activeTrip.documents.length === 0) && (
+                      <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                        {lang === "he" ? "אין מסמכים מצורפים לנסיעה זו" : "No documents attached to this trip"}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Uploader Form */}
+                  <form onSubmit={handleSaveDocument} style={{ marginTop: "16px", padding: "12px", background: "rgba(255,255,255,0.01)", border: "1px dashed var(--border-glass)", borderRadius: "8px" }}>
+                    <h5 style={{ fontSize: "13px", fontWeight: "700", marginBottom: "8px" }}>
+                      {lang === "he" ? "העלאת כרטיסי טיסה או שוברים לנסיעה" : "Upload boarding passes/tickets to this trip"}
+                    </h5>
+                    
+                    <div className="grid-cols-2" style={{ gap: "8px", marginBottom: "10px" }}>
+                      <input 
+                        type="text" 
+                        placeholder={lang === "he" ? "כותרת (למשל: כרטיס טיסה הלוך)" : "Title (e.g. Flight ticket)"}
+                        className="form-input" 
+                        style={{ padding: "8px 12px", fontSize: "13px" }}
+                        value={docTitle}
+                        onChange={(e) => { setDocTitle(e.target.value); setUploadError(""); }}
+                      />
+                      
+                      <label className="btn-secondary" style={{ padding: "8px 12px", fontSize: "13px", cursor: "pointer", display: "inline-flex" }}>
+                        <FileUp size={12} />
+                        {uploadedFileName ? (uploadedFileName.slice(0, 10) + "...") : (lang === "he" ? "בחר קובץ" : "Choose File")}
+                        <input 
+                          type="file" 
+                          accept="image/*,application/pdf" 
+                          className="file-upload-input" 
+                          onChange={handleFileUpload} 
+                        />
+                      </label>
+                    </div>
+                    {uploadError && <div style={{ color: "var(--danger)", fontSize: "11px", marginBottom: "6px" }}>{uploadError}</div>}
+                    
+                    <button 
+                      type="submit" 
+                      className="btn-primary" 
+                      style={{ width: "100%", padding: "8px", fontSize: "13px", borderRadius: "6px" }}
+                      disabled={isUploading}
+                    >
+                      {isUploading ? (lang === "he" ? "מעלה..." : "Uploading...") : (lang === "he" ? "צרף מסמך" : "Attach Document")}
+                    </button>
+                  </form>
+                </div>
+
+                {/* Footer buttons */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "24px" }}>
+                  <button 
+                    onClick={() => {
+                      const confirmDel = window.confirm(lang === "he" ? "למחוק את הנסיעה הזו?" : "Delete this trip?");
+                      if (confirmDel) {
+                        onDeleteTrip(activeTrip.id);
+                        setSelectedTripId(null);
+                      }
+                    }}
+                    className="btn-text" 
+                    style={{ color: "var(--danger)" }}
+                  >
+                    <Trash size={16} />
+                    {t.deleteBtn}
+                  </button>
+
+                  <div style={{ display: "flex", gap: "10px" }}>
+                    <button onClick={() => handleStartEdit(activeTrip)} className="btn-secondary" style={{ padding: "8px 16px" }}>
+                      <Edit size={14} />
+                      {t.editBtn}
+                    </button>
+                    <button onClick={() => setSelectedTripId(null)} className="btn-primary" style={{ padding: "8px 16px" }}>
+                      {lang === "he" ? "סגור" : "Close"}
+                    </button>
+                  </div>
+                </div>
+
               </div>
-            </form>
+            )}
           </div>
         </div>
       )}
 
       {/* Lightbox / Document Preview Modal */}
       {selectedDocPreview && (
-        <div className="modal-overlay" onClick={() => setSelectedDocPreview(null)}>
+        <div className="modal-overlay" style={{ zIndex: 1100 }} onClick={() => setSelectedDocPreview(null)}>
           <div className="modal-content glass-panel" style={{ maxWidth: "500px", position: "relative" }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
               <div>
                 <h3 style={{ fontSize: "18px" }}>{selectedDocPreview.title}</h3>
                 <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-                  {t.greeting} {getMember(selectedDocPreview.memberId).name} | {selectedDocPreview.uploadDate}
+                  {selectedDocPreview.uploadDate}
                 </span>
               </div>
               <button 
@@ -575,7 +806,6 @@ export default function TravelHub({ family, trips, documents, onSaveTrip, onDele
           </div>
         </div>
       )}
-
     </div>
   );
 }
